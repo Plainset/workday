@@ -1,19 +1,27 @@
-revision: 2c20e847ef789c399624c254a4c274557c3f7f36
+revision: 90cf2725e864fc780d13e686d2cf3a28a744c7c7
+ M docs/manual-verification.md
  M evidence/latest/REVISION.txt
  D evidence/latest/build.log
  D evidence/latest/environment.txt
  D evidence/latest/snapshot.log
  D evidence/latest/snapshots/month-dark.png
  D evidence/latest/snapshots/month-empty-light.png
+ D evidence/latest/snapshots/month-leap-feb-2028-light.png
  D evidence/latest/snapshots/month-light.png
- D evidence/latest/snapshots/month-overflow-light.png
+ D evidence/latest/snapshots/month-minsize-dark.png
+ D evidence/latest/snapshots/month-minsize-light.png
+ D evidence/latest/snapshots/month-previous-overflow-dark.png
+ D evidence/latest/snapshots/month-previous-overflow-light.png
  D evidence/latest/snapshots/month-reduced-motion-dark.png
  D evidence/latest/snapshots/popover-dark.png
  D evidence/latest/snapshots/popover-empty-light.png
  D evidence/latest/snapshots/popover-light.png
  D evidence/latest/snapshots/popover-recovery-light.png
+ D evidence/latest/snapshots/status-items.png
  D evidence/latest/snapshots/tiles-scale-dark.png
  D evidence/latest/snapshots/tiles-scale-light.png
  D evidence/latest/snapshots/year-dark.png
  D evidence/latest/snapshots/year-light.png
+ D evidence/latest/snapshots/year-minsize-dark.png
+ D evidence/latest/snapshots/year-minsize-light.png
  D evidence/latest/test.log

@@ -32,6 +32,10 @@ blocked further background GUI interaction; those steps are listed under §3 as 
 | Editor (M6) | Click 23 Oct → editor; Add Session (09:00–17:00) → Save: day total 8h, "Goal met", streak 2→3, glass and tile filled immediately. Second identical session: red "This overlaps the session 09:00–17:00 on 23 Oct 2026…" and Save disabled. Done with open draft → "Discard the unsaved session?" dialog |
 | Dock policy on close (A09) | Start Work, close calendar window → `UIElement` (no Dock icon), process alive, session still `active` |
 | Second launch | running instance opens its calendar (`Foreground`) |
+| Timer menu (U15) | while running, Timer menu item reads "Stop Timer (records 0m)" |
+| Settings → Notifications | permission denied for the test bundle: orange "Notifications are turned off for Workday in System Settings…" row with **Open Settings**; toggles still usable |
+| Settings → Backups | "Last backup 24 Oct 2026 at 0:02" — a new automatic snapshot was taken after midnight because data changed; list shows 2 valid automatic backups with session counts; **Restore…** disabled while the timer runs |
+| Settings → General | goal stepper + minutes picker, launch-at-login toggle (not registered for test instances by design) |
 
 ## 3. Manual checks still required (need a human at the Mac)
 
