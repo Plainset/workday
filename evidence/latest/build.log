@@ -1,0 +1,29 @@
+==> Building arm64 release
+[0/1] Planning build
+Building for production...
+[0/4] Write sources
+[2/4] Write swift-version--1AB21518FC5DEDBE.txt
+[4/5] Compiling WorkdayCore BackupManager.swift
+[5/6] Compiling Workday AppDelegate.swift
+[5/7] Write Objects.LinkFileList
+[6/7] Linking Workday
+Build complete! (8.80s)
+==> Building x86_64 release
+[0/1] Planning build
+Building for production...
+[0/4] Write sources
+[2/4] Write swift-version--1AB21518FC5DEDBE.txt
+[4/5] Compiling WorkdayCore BackupManager.swift
+[5/6] Compiling Workday AppDelegate.swift
+[5/7] Write Objects.LinkFileList
+[6/7] Linking Workday
+Build complete! (8.57s)
+==> Assembling ./dist/Workday.app
+./dist/Workday.app/Contents/Info.plist: OK
+==> Signing (ad-hoc)
+./dist/Workday.app: replacing existing signature
+./dist/Workday.app: valid on disk
+./dist/Workday.app: satisfies its Designated Requirement
+Architectures in the fat file: ./dist/Workday.app/Contents/MacOS/Workday are: x86_64 arm64 
+==> Done: ./dist/Workday.app
+build exit: 0
