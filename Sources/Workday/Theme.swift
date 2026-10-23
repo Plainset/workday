@@ -117,11 +117,13 @@ struct SegmentedSwitch<T: Hashable>: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(option.1) view")
                 .accessibilityAddTraits(selection == option.0 ? .isSelected : [])
             }
         }
         .padding(3)
         .background(Theme.subtleFill(scheme), in: Capsule())
+        .accessibilityElement(children: .contain)
     }
 }
 

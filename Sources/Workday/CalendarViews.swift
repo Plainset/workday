@@ -94,7 +94,6 @@ struct CalendarRootView: View {
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             SegmentedSwitch(options: [(CalendarMode.month, "Month"), (CalendarMode.year, "Year")], selection: $mode)
-                .accessibilityLabel("Calendar view")
             HStack(spacing: 6) {
                 Button { navigate(-1) } label: { Image(systemName: "chevron.left").frame(width: 14) }
                     .buttonStyle(PillButtonStyle(compact: true))
