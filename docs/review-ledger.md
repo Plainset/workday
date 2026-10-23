@@ -14,36 +14,39 @@ Functional reviewer (A10 FAIL; A09/A12 UNVERIFIED; others PASS at logic level):
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| F1 | high | Goal notification (on by default) never requests permission, so it never fires | cycle 2 |
-| F2 | medium | "Keep running" after a late recovery decision silently counts hours since relaunch | cycle 2 |
-| F3 | medium | `poweringOff` never reset after a cancelled logout disables quit confirmation | cycle 2 |
-| F4 | low | Backwards clock can discard a session on stop / recovery | cycle 2 |
-| F5 | low | Start refused right after a manual entry ending ≤60 s in the future | cycle 2 |
-| F6 | low | Deleting the running session from the editor leaves nap activity/status stale | cycle 2 |
-| F7 | low | "Last backup" counts safety copies; pruning doesn't protect newest valid copy | cycle 2 |
-| F8 | low | Reminder time picker off by an hour on DST days | cycle 2 |
-| F9 | low | Restore can re-fire today's goal notification | cycle 2 |
-| F10 | low | Check-in reminder has no window | cycle 2 (documented behaviour) |
-| F-EG | — | Ledger empty; A05/A06 marked PASS while UI unverified | cycle 2 |
+| F1 | high | Goal notification (on by default) never requests permission, so it never fires | fixed `71f3b67`/`2c20e84` |
+| F2 | medium | "Keep running" after a late recovery decision silently counts hours since relaunch | fixed `71f3b67`/`2c20e84` |
+| F3 | medium | `poweringOff` never reset after a cancelled logout disables quit confirmation | fixed `71f3b67`/`2c20e84` |
+| F4 | low | Backwards clock can discard a session on stop / recovery | fixed `71f3b67`/`2c20e84` |
+| F5 | low | Start refused right after a manual entry ending ≤60 s in the future | fixed `71f3b67`/`2c20e84` |
+| F6 | low | Deleting the running session from the editor leaves nap activity/status stale | fixed `71f3b67`/`2c20e84` |
+| F7 | low | "Last backup" counts safety copies; pruning doesn't protect newest valid copy | fixed `71f3b67`/`2c20e84` |
+| F8 | low | Reminder time picker off by an hour on DST days | fixed `71f3b67`/`2c20e84` |
+| F9 | low | Restore can re-fire today's goal notification | fixed `71f3b67`/`2c20e84` |
+| F10 | low | Check-in reminder has no window | fixed `2c20e84` (check-in only for sessions running at the chosen time; test F10) |
+| F-EG | — | Ledger empty; A05/A06 marked PASS while UI unverified | fixed: ledger maintained; A05/A06 now PARTIAL |
 
 UI/UX reviewer (A07 PASS, A08 PASS, A09 UNVERIFIED, A12 FAIL):
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| U1 | high | Idle redraw at 40 fps / 12×20 fps year timelines; MiniGlass always 40 fps; 1 s body refresh | cycle 2 |
-| U2 | high | Dark year view day numbers illegible where waterline crosses glyph | cycle 2 |
-| U3 | medium | Fixed coverage thresholds split month tile text | cycle 2 |
-| U4 | medium | No empty-state guidance in calendar | cycle 2 |
-| U5 | medium | Reduce Motion doesn't gate slide transitions/springs | cycle 2 |
-| U6 | medium | Adjacent-month days faded twice; unreadable in dark | cycle 2 |
-| U7 | medium | Day editor doesn't scroll | cycle 2 |
-| U8 | medium | Automatic backup failure only visible in Settings | cycle 2 |
-| U9 | medium | Year view lacks keyboard navigation; readout hover-only | cycle 2 |
+| U1 | high | Idle redraw at 40 fps / 12×20 fps year timelines; MiniGlass always 40 fps; 1 s body refresh | fixed `71f3b67`/`2c20e84` |
+| U2 | high | Dark year view day numbers illegible where waterline crosses glyph | fixed `71f3b67`/`2c20e84` |
+| U3 | medium | Fixed coverage thresholds split month tile text | fixed `71f3b67`/`2c20e84` |
+| U4 | medium | No empty-state guidance in calendar | fixed `71f3b67`/`2c20e84` |
+| U5 | medium | Reduce Motion doesn't gate slide transitions/springs | fixed `71f3b67`/`2c20e84` |
+| U6 | medium | Adjacent-month days faded twice; unreadable in dark | fixed `71f3b67`/`2c20e84` |
+| U7 | medium | Day editor doesn't scroll | fixed `71f3b67`/`2c20e84` |
+| U8 | medium | Automatic backup failure only visible in Settings | fixed `71f3b67`/`2c20e84` |
+| U9 | medium | Year view lacks keyboard navigation; readout hover-only | fixed `71f3b67`/`2c20e84` |
 | U10 | low | Goal 0 → nonsense progress | no change: `WorkdaySettings.normalized()` clamps to ≥15 min (test `streakBreak`) |
-| U11 | low | Exactly-18h tile is a static slab | cycle 2 |
-| U12 | low | Recovery panel floats above other apps | cycle 2 |
-| U13 | low | Second launch gives no feedback | cycle 2 |
-| U14 | low | Esc on Done discards unsaved draft | cycle 2 |
-| U15 | low | ⇧⌘S toggles timer without clear feedback | cycle 2 |
-| U16 | low | `month-overflow-light.png` mislabelled (same month) | cycle 2 |
-| U17 | low | Fixed font sizes | cycle 2 (partial: scale factors; limitation documented) |
+| U11 | low | Exactly-18h tile is a static slab | fixed `71f3b67`/`2c20e84` |
+| U12 | low | Recovery panel floats above other apps | fixed `71f3b67`/`2c20e84` |
+| U13 | low | Second launch gives no feedback | fixed `71f3b67`/`2c20e84` |
+| U14 | low | Esc on Done discards unsaved draft | fixed `71f3b67`/`2c20e84` |
+| U15 | low | ⇧⌘S toggles timer without clear feedback | fixed `71f3b67`/`2c20e84` |
+| U16 | low | `month-overflow-light.png` mislabelled (same month) | fixed `71f3b67`/`2c20e84` |
+| U17 | low | Fixed font sizes | partially fixed `2c20e84` (scale factors; limitation documented in ARCHITECTURE) |
+
+Fix commits: core findings in `71f3b67` (regression suite `Tests/WorkdayCoreTests/RegressionTests.swift`, 9 tests),
+app/UI findings in `2c20e84`. Evidence regenerated for `2c20e84`: 42/42 tests, universal build, 20 snapshots.
