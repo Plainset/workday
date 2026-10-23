@@ -212,6 +212,12 @@ public final class WorkStore {
         return db.changes > 0
     }
 
+    func notificationRecords() -> [(day: String, kind: String, sentAt: Double)] {
+        var result: [(String, String, Double)] = []
+        try? db.query("SELECT day, kind, sent_at FROM notifications_sent") { result.append(($0.text(0), $0.text(1), $0.double(2))) }
+        return result
+    }
+
     // MARK: Integrity
 
     /// Runs SQLite's integrity check and verifies the expected tables are readable.

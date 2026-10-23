@@ -159,7 +159,7 @@ struct BackupTests {
         try ledger.detectInterruptions(launchTime: clock.now.addingTimeInterval(600))
         let backups = BackupManager(store: ledger.store, directory: dir.appendingPathComponent("Backups"))
         let b = try backups.createBackup(kind: .manual, now: clock.now)
-        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .excludeGap, continueTracking: false)
+        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .excludeGap, continuation: .none)
         #expect(!ledger.hasPendingRecovery)
         try backups.restore(b, now: clock.now.addingTimeInterval(5))
         try ledger.reload()

@@ -81,8 +81,9 @@ public final class BackupManager {
         return result.sorted { $0.createdAt > $1.createdAt }
     }
 
+    /// Most recent automatic or manual backup (safety copies made before a restore don't count).
     public var lastBackupDate: Date? {
-        list(validate: false).first?.createdAt
+        list(validate: false).first { $0.kind != .safety }?.createdAt
     }
 
     // MARK: Creating
@@ -150,7 +151,16 @@ public final class BackupManager {
         let all = list(validate: false)
         for kind in BackupInfo.Kind.allCases {
             let keep = Self.retention[kind] ?? 30
-            for info in all.filter({ $0.kind == kind }).dropFirst(keep) {
+            let ofKind = all.filter { $0.kind == kind }
+            var doomed = Array(ofKind.dropFirst(keep))
+            guard !doomed.isEmpty else { continue }
+            // Never prune away the last known-good copy: if none of the kept files validates,
+            // spare the newest valid one among those beyond the limit.
+            let keptHasValid = ofKind.prefix(keep).contains { (try? WorkStore.validate(databaseAt: $0.url.path)) != nil }
+            if !keptHasValid, let spare = doomed.firstIndex(where: { (try? WorkStore.validate(databaseAt: $0.url.path)) != nil }) {
+                doomed.remove(at: spare)
+            }
+            for info in doomed {
                 try? fileManager.removeItem(at: info.url)
             }
         }
@@ -174,8 +184,14 @@ public final class BackupManager {
         // 3. Replace contents. SQLite applies the copy as a single write transaction on the destination.
         let source = try SQLiteDatabase(path: backup.url.path, readOnly: true)
         defer { source.close() }
+        // Notifications already delivered must not fire again after going back in time.
+        let sent = store.notificationRecords()
         do {
             try SQLiteDatabase.copy(from: source, to: store.db)
+            for record in sent {
+                try store.db.run("INSERT OR IGNORE INTO notifications_sent(day, kind, sent_at) VALUES(?, ?, ?)",
+                                 [.text(record.day), .text(record.kind), .double(record.sentAt)])
+            }
             try store.migrate()
             try store.db.execute("PRAGMA journal_mode=WAL")
             try store.logEvent("restore", sessionID: nil, at: now, detail: backup.url.lastPathComponent)

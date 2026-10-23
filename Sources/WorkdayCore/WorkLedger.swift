@@ -13,6 +13,7 @@ public enum LedgerError: LocalizedError, Equatable {
     case invalidRecovery(String)
     case recoveryPendingForSession
     case storage(String)
+    case clockWentBackwards
 
     public var errorDescription: String? {
         switch self {
@@ -36,6 +37,8 @@ public enum LedgerError: LocalizedError, Equatable {
             return "This session was interrupted and needs a recovery decision before it can be edited."
         case .storage(let m):
             return "The change could not be saved: \(m)"
+        case .clockWentBackwards:
+            return "Your Mac's clock is now earlier than when this session started, so it can't be stopped safely. Check Date & Time in System Settings, then stop the timer again. Nothing has been lost."
         }
     }
 }
@@ -48,6 +51,15 @@ public enum RecoveryDecision: Equatable, Sendable {
     case excludeGap
     /// The user states when they actually stopped, and optionally when they resumed before the relaunch.
     case custom(end: Date, resumedAt: Date?)
+}
+
+/// Whether (and from when) the timer keeps running after a recovery decision.
+public enum RecoveryContinuation: Equatable, Sendable {
+    case none
+    /// Continue as if Workday had been timing since the relaunch (counts relaunch → now).
+    case fromRelaunch
+    /// Start a fresh interval at the moment the decision is applied.
+    case fromNow
 }
 
 /// The resulting intervals of a recovery decision (used for preview and for applying).
@@ -221,7 +233,12 @@ public final class WorkLedger {
     public func stop() throws -> WorkSession? {
         guard var session = activeSession else { return nil }
         let now = clock()
-        if now.timeIntervalSince(session.start) < 1 {
+        let elapsed = now.timeIntervalSince(session.start)
+        if elapsed < 0 {
+            // The clock moved backwards: never discard recorded work.
+            throw LedgerError.clockWentBackwards
+        }
+        if elapsed < 1 {
             // A zero-length interval is invalid; discard it instead of storing it.
             try persist {
                 try store.deleteSession(id: session.id)
@@ -280,7 +297,7 @@ public final class WorkLedger {
     }
 
     /// Computes the intervals a decision would produce, validating bounds.
-    public func recoveryOutcome(for session: WorkSession, decision: RecoveryDecision, continueTracking: Bool) throws -> RecoveryOutcome {
+    public func recoveryOutcome(for session: WorkSession, decision: RecoveryDecision, continuation: RecoveryContinuation) throws -> RecoveryOutcome {
         guard session.state == .interrupted, let detected = session.detectedAt else { throw LedgerError.notInterrupted }
         let checkpoint = min(max(session.checkpoint, session.start), detected)
         var pieces: [RecoveryOutcome.Piece] = []
@@ -307,11 +324,21 @@ public final class WorkLedger {
                 pieces.append(.init(start: resumed, end: detected))
             }
         }
-        if continueTracking {
+        switch continuation {
+        case .none:
+            break
+        case .fromRelaunch:
             if let last = pieces.last, last.end == detected {
                 pieces[pieces.count - 1].end = nil
             } else {
                 pieces.append(.init(start: detected, end: nil))
+            }
+        case .fromNow:
+            let now = max(clock(), detected)
+            if let last = pieces.last, last.end == now {
+                pieces[pieces.count - 1].end = nil
+            } else {
+                pieces.append(.init(start: now, end: nil))
             }
         }
         // Drop empty pieces (e.g. excluding a gap when no time was confirmed).
@@ -321,12 +348,12 @@ public final class WorkLedger {
 
     /// Applies a recovery decision atomically. Calling it twice fails with `.notInterrupted`,
     /// so the gap can never be counted twice.
-    public func resolveRecovery(sessionID: UUID, decision: RecoveryDecision, continueTracking: Bool) throws {
+    public func resolveRecovery(sessionID: UUID, decision: RecoveryDecision, continuation: RecoveryContinuation) throws {
         guard let session = sessions.first(where: { $0.id == sessionID }) else { throw LedgerError.sessionNotFound }
-        if continueTracking, activeSession != nil {
+        if continuation != .none, activeSession != nil {
             throw LedgerError.invalidRecovery("The timer is already running, so this session can't also keep running. Leave “Keep the timer running” off.")
         }
-        let outcome = try recoveryOutcome(for: session, decision: decision, continueTracking: continueTracking)
+        let outcome = try recoveryOutcome(for: session, decision: decision, continuation: continuation)
         for piece in outcome.pieces {
             if let c = conflicting(start: piece.start, end: piece.end, excluding: [sessionID]) {
                 throw LedgerError.overlaps(description: describe(c))
@@ -354,7 +381,7 @@ public final class WorkLedger {
                 try store.upsert(s)
             }
             try store.logEvent("recovery-resolved", sessionID: sessionID, at: now,
-                               detail: "\(decision) continue=\(continueTracking) pieces=\(outcome.pieces.count)")
+                               detail: "\(decision) continue=\(continuation) pieces=\(outcome.pieces.count)")
         }
     }
 
@@ -378,9 +405,18 @@ public final class WorkLedger {
         }
     }
 
+    /// Manual end times may be up to `futureTolerance` ahead (minute pickers); they are clamped to now
+    /// so a manual session never reserves time the timer is about to use.
+    private func clampedManualEnd(_ end: Date) throws -> Date {
+        let now = clock()
+        guard end <= now.addingTimeInterval(Self.futureTolerance) else { throw LedgerError.inFuture }
+        return min(end, now).truncatedToSecond
+    }
+
     @discardableResult
     public func addSession(start: Date, end: Date) throws -> WorkSession {
-        let (start, end) = (start.truncatedToSecond, end.truncatedToSecond)
+        let start = start.truncatedToSecond
+        let end = try clampedManualEnd(end)
         try validate(start: start, end: end)
         let now = clock()
         let s = WorkSession(start: start, end: end, state: .closed, checkpoint: end, checkpointKind: .heartbeat,
@@ -399,7 +435,8 @@ public final class WorkLedger {
         case .interrupted: throw LedgerError.recoveryPendingForSession
         case .closed: break
         }
-        let (start, end) = (start.truncatedToSecond, end.truncatedToSecond)
+        let start = start.truncatedToSecond
+        let end = try clampedManualEnd(end)
         try validate(start: start, end: end, excluding: id)
         let now = clock()
         let old = s

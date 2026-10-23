@@ -40,18 +40,18 @@ struct RecoveryTests {
     func countGap() throws {
         let (ledger, _, _) = try crashScenario()
         let id = ledger.pendingRecoveries[0].id
-        try ledger.resolveRecovery(sessionID: id, decision: .countGap, continueTracking: false)
+        try ledger.resolveRecovery(sessionID: id, decision: .countGap, continuation: .none)
         #expect(ledger.total(for: ledger.today()) == 4 * 3600)
         #expect(ledger.pendingSeconds(for: ledger.today()) == 0)
         #expect(!ledger.hasPendingRecovery)
-        #expect(throws: (any Error).self) { try ledger.resolveRecovery(sessionID: id, decision: .countGap, continueTracking: false) }
+        #expect(throws: (any Error).self) { try ledger.resolveRecovery(sessionID: id, decision: .countGap, continuation: .none) }
         #expect(ledger.total(for: ledger.today()) == 4 * 3600)
     }
 
     @Test("Exclude the gap: confirmed portion survives")
     func excludeGap() throws {
         let (ledger, _, _) = try crashScenario()
-        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .excludeGap, continueTracking: false)
+        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .excludeGap, continuation: .none)
         #expect(ledger.total(for: ledger.today()) == 2 * 3600)
         #expect(!ledger.hasPendingRecovery)
         #expect(ledger.sessions.count == 1)
@@ -63,7 +63,7 @@ struct RecoveryTests {
         let id = ledger.pendingRecoveries[0].id
         try ledger.resolveRecovery(sessionID: id,
                                    decision: .custom(end: date(2026, 10, 23, 11, 30), resumedAt: date(2026, 10, 23, 12, 15)),
-                                   continueTracking: false)
+                                   continuation: .none)
         // 09:00–11:30 (2.5h) + 12:15–13:00 (0.75h)
         #expect(ledger.total(for: ledger.today()) == 3.25 * 3600)
         #expect(ledger.sessions.count == 2)
@@ -73,16 +73,16 @@ struct RecoveryTests {
     func customValidation() throws {
         let (ledger, _, _) = try crashScenario()
         let s = ledger.pendingRecoveries[0]
-        #expect(throws: (any Error).self) { try ledger.recoveryOutcome(for: s, decision: .custom(end: date(2026, 10, 23, 8), resumedAt: nil), continueTracking: false) }
-        #expect(throws: (any Error).self) { try ledger.recoveryOutcome(for: s, decision: .custom(end: date(2026, 10, 23, 14), resumedAt: nil), continueTracking: false) }
-        #expect(throws: (any Error).self) { try ledger.recoveryOutcome(for: s, decision: .custom(end: date(2026, 10, 23, 12), resumedAt: date(2026, 10, 23, 11)), continueTracking: false) }
+        #expect(throws: (any Error).self) { try ledger.recoveryOutcome(for: s, decision: .custom(end: date(2026, 10, 23, 8), resumedAt: nil), continuation: .none) }
+        #expect(throws: (any Error).self) { try ledger.recoveryOutcome(for: s, decision: .custom(end: date(2026, 10, 23, 14), resumedAt: nil), continuation: .none) }
+        #expect(throws: (any Error).self) { try ledger.recoveryOutcome(for: s, decision: .custom(end: date(2026, 10, 23, 12), resumedAt: date(2026, 10, 23, 11)), continuation: .none) }
         #expect(ledger.hasPendingRecovery)
     }
 
     @Test("Count the gap and keep running continues the same session")
     func continueTracking() throws {
         let (ledger, clock, _) = try crashScenario()
-        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .countGap, continueTracking: true)
+        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .countGap, continuation: .fromRelaunch)
         #expect(ledger.isRunning)
         clock.now = date(2026, 10, 23, 14, 0)
         #expect(ledger.total(for: ledger.today()) == 5 * 3600)
@@ -91,7 +91,7 @@ struct RecoveryTests {
     @Test("Exclude and keep running starts a new interval at the relaunch time")
     func excludeAndContinue() throws {
         let (ledger, clock, _) = try crashScenario()
-        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .excludeGap, continueTracking: true)
+        try ledger.resolveRecovery(sessionID: ledger.pendingRecoveries[0].id, decision: .excludeGap, continuation: .fromRelaunch)
         clock.now = date(2026, 10, 23, 14, 0)
         #expect(ledger.total(for: ledger.today()) == 3 * 3600) // 2h confirmed + 13:00–14:00
         #expect(ledger.sessions.count == 2)
@@ -103,8 +103,8 @@ struct RecoveryTests {
         try ledger.start()
         clock.now = date(2026, 10, 23, 14, 0)
         let id = ledger.pendingRecoveries[0].id
-        #expect(throws: (any Error).self) { try ledger.resolveRecovery(sessionID: id, decision: .countGap, continueTracking: true) }
-        try ledger.resolveRecovery(sessionID: id, decision: .countGap, continueTracking: false)
+        #expect(throws: (any Error).self) { try ledger.resolveRecovery(sessionID: id, decision: .countGap, continuation: .fromRelaunch) }
+        try ledger.resolveRecovery(sessionID: id, decision: .countGap, continuation: .none)
         #expect(ledger.total(for: ledger.today()) == 5 * 3600) // 09–13 + 13–14
         // A manual session inside the pending gap would have been refused:
         #expect(ledger.conflicting(start: date(2026, 10, 23, 12), end: date(2026, 10, 23, 12, 30), excluding: []) != nil)

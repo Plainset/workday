@@ -13,6 +13,7 @@ struct RecoveryView: View {
     @State private var useResume = false
     @State private var customResume = Date()
     @State private var keepRunning = false
+    @State private var resumeFromRelaunch = false
     @State private var initializedFor: UUID?
 
     var body: some View {
@@ -42,8 +43,9 @@ struct RecoveryView: View {
         initializedFor = s.id
         customEnd = s.checkpoint
         customResume = s.detectedAt ?? s.checkpoint
-        choice = s.checkpointKind.isExactStop ? .exclude : .exclude
+        choice = .exclude
         keepRunning = false
+        resumeFromRelaunch = false
     }
 
     @ViewBuilder
@@ -60,7 +62,13 @@ struct RecoveryView: View {
             }
         }()
         let canContinue = !model.ledger.isRunning
-        let outcome = Result { try model.ledger.recoveryOutcome(for: s, decision: decision, continueTracking: keepRunning && canContinue) }
+        // Deciding long after the relaunch: counting from the relaunch would add all the time since,
+        // so the default is to start again from now and the alternative states the exact cost.
+        let sinceRelaunch = max(0, model.now.timeIntervalSince(detected))
+        let late = sinceRelaunch > 5 * 60
+        let continuation: RecoveryContinuation = !(keepRunning && canContinue) ? .none
+            : (!late || resumeFromRelaunch ? .fromRelaunch : .fromNow)
+        let outcome = Result { try model.ledger.recoveryOutcome(for: s, decision: decision, continuation: continuation) }
 
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
@@ -123,11 +131,22 @@ struct RecoveryView: View {
                 }
 
                 Toggle(isOn: $keepRunning) {
-                    Text("Keep the timer running from the relaunch (\(DateFormatter.time(calendar: cal).string(from: detected))) onwards")
+                    Text(late ? "Keep the timer running after applying"
+                              : "Keep the timer running from the relaunch (\(DateFormatter.time(calendar: cal).string(from: detected))) onwards")
                 }
                 .disabled(!canContinue)
                 .help(canContinue ? "" : "The timer is already running in a new session.")
                 .font(.system(size: 12))
+                if keepRunning && canContinue && late {
+                    Picker("Resume", selection: $resumeFromRelaunch) {
+                        Text("Start timing again now").tag(false)
+                        Text("Count from the relaunch at \(full.string(from: detected)) (adds \(DurationFormat.short(sinceRelaunch)))").tag(true)
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    .font(.system(size: 12))
+                    .padding(.leading, 20)
+                }
             }
 
             switch outcome {
@@ -164,7 +183,7 @@ struct RecoveryView: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Apply") {
                     let ok = model.perform {
-                        try model.ledger.resolveRecovery(sessionID: s.id, decision: decision, continueTracking: keepRunning && canContinue)
+                        try model.ledger.resolveRecovery(sessionID: s.id, decision: decision, continuation: continuation)
                     }
                     AppDelegate.shared?.timerStateChanged()
                     if ok && !model.ledger.hasPendingRecovery { AppDelegate.shared?.closeRecovery() }

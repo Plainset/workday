@@ -75,6 +75,7 @@ public enum ReminderPlanner {
                            settings: WorkdaySettings,
                            todaySeconds: TimeInterval,
                            isRunning: Bool,
+                           activeSessionStart: Date? = nil,
                            alreadySent: (ReminderKind) -> Bool) -> [ReminderKind] {
         var result: [ReminderKind] = []
         let minute = TimeMath.minuteOfDay(now, calendar: calendar)
@@ -92,12 +93,27 @@ public enum ReminderPlanner {
            !alreadySent(.startReminder) {
             result.append(.startReminder)
         }
+        // Check-in: only for a session that was already running at the chosen time today
+        // (starting late in the evening doesn't trigger an immediate "still running" nag).
+        let checkInInstant = calendar.date(bySettingHour: settings.stopReminderMinutes / 60,
+                                           minute: settings.stopReminderMinutes % 60, second: 0, of: now) ?? now
         if settings.stopReminderEnabled,
            isRunning,
            minute >= settings.stopReminderMinutes,
+           (activeSessionStart ?? .distantPast) <= checkInInstant,
            !alreadySent(.stopReminder) {
             result.append(.stopReminder)
         }
         return result
+    }
+}
+
+/// When to ask macOS for notification permission.
+public enum NotificationPermissionPolicy {
+    /// Ask as soon as any notification feature is enabled (the goal notification is on by default,
+    /// so a fresh install asks once at first launch). Never ask again after the user decided.
+    public static func shouldRequest(settings: WorkdaySettings, permissionUndetermined: Bool) -> Bool {
+        permissionUndetermined
+            && (settings.goalNotificationEnabled || settings.startReminderEnabled || settings.stopReminderEnabled)
     }
 }
