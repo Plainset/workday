@@ -15,6 +15,9 @@ final class AppModel {
     /// Display clock, refreshed by `tick()`. Totals never depend on tick frequency; they are computed
     /// from stored instants and this value.
     var now: Date
+    /// Minute-resolution clock for the calendar and editor (they display whole minutes), so those
+    /// views re-render at most once a minute instead of every second.
+    private(set) var displayNow: Date
 
     /// User-visible error banner (e.g. a failed save or backup).
     var errorMessage: String?
@@ -37,12 +40,16 @@ final class AppModel {
         self.notifications = notifications
         self.launchAtLogin = launchAtLogin
         self.now = ledger.clock()
+        self.displayNow = Self.minuteFloor(ledger.clock())
         refreshBackupStatus()
     }
 
     var calendar: Calendar { ledger.calendar }
-    var today: DayKey { ledger.today(now: now) }
-    var todayTotal: TimeInterval { ledger.total(for: today, now: now) }
+    var today: DayKey { ledger.today(now: displayNow) }
+    /// Today's total and goal progress at minute resolution (calendar use).
+    var displayTodayTotal: TimeInterval { ledger.total(for: today, now: displayNow) }
+    var displayGoalProgress: Double { goalSeconds > 0 ? displayTodayTotal / goalSeconds : 0 }
+    var todayTotal: TimeInterval { ledger.total(for: ledger.today(now: now), now: now) }
     var goalSeconds: TimeInterval { ledger.settings.dailyGoalSeconds }
     var goalProgress: Double { goalSeconds > 0 ? todayTotal / goalSeconds : 0 }
     var isRunning: Bool { ledger.isRunning }
@@ -61,6 +68,12 @@ final class AppModel {
 
     func tick(_ date: Date = Date()) {
         now = date
+        let minute = Self.minuteFloor(date)
+        if minute != displayNow { displayNow = minute }
+    }
+
+    private static func minuteFloor(_ date: Date) -> Date {
+        Date(timeIntervalSinceReferenceDate: (date.timeIntervalSinceReferenceDate / 60).rounded(.down) * 60)
     }
 
     /// Runs a ledger mutation, surfacing any error to the user.
@@ -68,8 +81,10 @@ final class AppModel {
     func perform(_ body: () throws -> Void) -> Bool {
         do {
             try body()
-            now = ledger.clock()
+            tick(ledger.clock())
+            displayNow = ledger.clock()
             errorMessage = nil
+            AppDelegate.shared?.timerStateChanged()
             return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -140,7 +155,7 @@ final class AppModel {
         let today = self.today
         let total = todayTotal
         let due = ReminderPlanner.due(now: now, calendar: calendar, settings: ledger.settings, todaySeconds: total,
-                                      isRunning: isRunning) { kind in
+                                      isRunning: isRunning, activeSessionStart: ledger.activeSession?.start) { kind in
             ledger.store.wasNotified(day: today, kind: kind)
         }
         guard !due.isEmpty else { return }
@@ -161,14 +176,19 @@ final class AppModel {
         }
     }
 
+    /// Asks for permission once if any notification feature (the goal notice is on by default) is enabled
+    /// and the user hasn't decided yet.
+    func requestNotificationPermissionIfNeeded() async {
+        await notifications.refresh()
+        if NotificationPermissionPolicy.shouldRequest(settings: ledger.settings,
+                                                      permissionUndetermined: notifications.permission == .notDetermined) {
+            await notifications.requestAuthorization()
+        }
+    }
+
     /// Enables a notification preference, requesting permission the first time.
     func enableNotificationFeature(_ change: @escaping (inout WorkdaySettings) -> Void) {
         perform { try ledger.updateSettings(change) }
-        Task {
-            await notifications.refresh()
-            if notifications.permission == .notDetermined {
-                await notifications.requestAuthorization()
-            }
-        }
+        Task { await requestNotificationPermissionIfNeeded() }
     }
 }

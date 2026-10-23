@@ -71,7 +71,12 @@ in for future reinterpretation if ever needed.
   time). "Keep the timer running" continues from the relaunch. Resolution re-reads the row inside one transaction,
   so it is atomic and idempotent across windows and relaunches.
 * Quitting from the menu while running asks to stop first; a system shutdown is recorded as an exact `shutdown`
-  checkpoint and reviewed on next launch (the spec treats shutdown as an interruption).
+  checkpoint and reviewed on next launch (the spec treats shutdown as an interruption). If a logout/shutdown is
+  cancelled, the quit confirmation re-arms after 90 s.
+* "Keep the timer running" after a decision: within 5 minutes of the relaunch it continues from the relaunch;
+  later, the default starts a new interval *now*, and counting from the relaunch is an explicit option showing the
+  exact time it adds.
+* Stopping when the clock has moved before the session start is refused (nothing is discarded).
 * Pending recovery shows a red dot on the menu bar glyph, a banner in the popover/calendar/editor, and a floating
   recovery panel at launch — the calendar is not forced open and no Dock icon appears.
 
@@ -83,7 +88,10 @@ in for future reinterpretation if ever needed.
 * `ReminderPlanner` (pure, tested) decides due notifications; the `notifications_sent(day, kind)` table guarantees
   each fires at most once per local day across redraws and restarts. Start reminder fires within 3 h of the chosen
   time if the timer isn't running; stop/check-in reminder fires once after the chosen time while running.
-* Permission is requested only when a notification feature is enabled; denial is handled gracefully.
+* Permission is requested once when any notification feature is enabled — the goal notice is on by default, so a
+  fresh install asks at first launch (`NotificationPermissionPolicy`). Denial is handled gracefully.
+* The check-in reminder only fires for a session that was already running at the chosen time.
+* A restore keeps the record of notifications already delivered, so it never re-fires today's goal notice.
 
 ## Backups
 
@@ -102,7 +110,17 @@ Restore is disabled while the timer runs.
   Live days get rising bubbles; > 18 h days stay full and add an outer glow, bright rim, foam along the brim,
   sparkles and an icon — the exact hours stay printed.
 * Motion: fill changes animate with a damped settle and trigger a slosh impulse; hovering a tile sloshes it.
-* Cadence: ≤ 40 fps while the calendar is key (20 fps for the compact year tiles), 8 fps when visible but inactive,
-  paused when hidden/occluded/minimised. **Reduce Motion** pauses the timeline and draws flat, still liquid with the
-  same data.
-* Text on liquid switches to a dark brown (`Theme.onLiquid`) that contrasts with orange in both appearances.
+* Cadence (`LiquidSchedule`): the timeline asks for its next frame lazily and picks the interval from the
+  current state — 40 fps (30 fps year view) only while a fill transition or slosh is settling, 24 fps while a live
+  session shows bubbles, a 10 fps (6 fps year) idle drift otherwise; when the window is not key these drop to
+  15 / 8 / 4 fps; hidden, occluded or minimised windows and **Reduce Motion** render a single still frame instead of
+  a timeline. The year view draws all 365 tiles with one Canvas and one timeline. Calendar and editor views read a
+  minute-resolution clock (`AppModel.displayNow`), so they re-render at most once a minute; only the popover ticks
+  every second.
+* Reduce Motion also replaces slide/spring navigation with short cross-fades and disables hover growth and slosh.
+* Labels are drawn twice and masked at the waterline (`WaterlineSplit`): normal colours above the surface, dark
+  brown (`Theme.onLiquid`) below it, so day numbers and durations stay legible wherever the surface crosses them,
+  at any tile size, in light and dark.
+* Text sizes are fixed points tuned for the tile grid with `minimumScaleFactor` fallbacks; macOS has no system-wide
+  Dynamic Type for AppKit apps, so large-text support relies on window resizing (tiles grow with the window) and the
+  system's display scaling. Settings/editor forms use standard controls that follow system font settings.

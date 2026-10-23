@@ -41,9 +41,24 @@ enum SnapshotRenderer {
                 render(MenuPopoverView().environment(model),
                        size: CGSize(width: 320, height: 330), scheme: scheme, to: outputDirectory.appendingPathComponent("popover-\(name).png"))
             }
-            // Previous month (contains the 18h+ overflow day in the demo data).
-            render(CalendarRootView(initialMonth: MonthKey(today.adding(days: -16, calendar: cal)), mode: .month, snapshotNow: now).environment(model),
-                   size: CGSize(width: 1060, height: 800), scheme: .light, to: outputDirectory.appendingPathComponent("month-overflow-light.png"))
+            // Previous month: contains a 21 h overflow day in the demo data.
+            let previous = MonthKey(today).adding(months: -1)
+            for scheme in [ColorScheme.light, .dark] {
+                render(CalendarRootView(initialMonth: previous, mode: .month, snapshotNow: now).environment(model),
+                       size: CGSize(width: 1060, height: 800), scheme: scheme,
+                       to: outputDirectory.appendingPathComponent("month-previous-overflow-\(scheme == .light ? "light" : "dark").png"))
+                // Minimum window size.
+                render(CalendarRootView(initialMonth: month, mode: .month, snapshotNow: now).environment(model),
+                       size: CGSize(width: 760, height: 620), scheme: scheme,
+                       to: outputDirectory.appendingPathComponent("month-minsize-\(scheme == .light ? "light" : "dark").png"))
+                render(CalendarRootView(initialMonth: month, mode: .year, snapshotNow: now).environment(model),
+                       size: CGSize(width: 760, height: 620), scheme: scheme,
+                       to: outputDirectory.appendingPathComponent("year-minsize-\(scheme == .light ? "light" : "dark").png"))
+            }
+            // Leap-year February layout.
+            render(CalendarRootView(initialMonth: MonthKey(year: 2028, month: 2), mode: .month, snapshotNow: now).environment(model),
+                   size: CGSize(width: 1060, height: 800), scheme: .light, to: outputDirectory.appendingPathComponent("month-leap-feb-2028-light.png"))
+            renderStatusItems(to: outputDirectory.appendingPathComponent("status-items.png"))
             render(CalendarRootView(initialMonth: month, mode: .month, snapshotNow: now).environment(model)
                     .environment(\.forceReducedMotion, true),
                    size: CGSize(width: 1060, height: 800), scheme: .dark, to: outputDirectory.appendingPathComponent("month-reduced-motion-dark.png"))
@@ -81,6 +96,35 @@ enum SnapshotRenderer {
             FileHandle.standardError.write("Snapshot failed: \(error)\n".data(using: .utf8)!)
             exit(1)
         }
+    }
+
+    /// The menu bar glyph + text in its main states, drawn with the real `StatusItemController.icon`.
+    private static func renderStatusItems(to url: URL) {
+        let states: [(String, Double, Bool, Bool)] = [("0:00  stopped, empty", 0, false, false),
+                                                       ("4:45  running, 59% of goal", 0.59, true, false),
+                                                       ("8:10  goal reached", 1, false, false),
+                                                       ("2:00  interrupted session pending", 0.25, false, true)]
+        let size = NSSize(width: 360, height: CGFloat(states.count) * 34 + 16)
+        let image = NSImage(size: size, flipped: true) { _ in
+            NSColor(white: 0.93, alpha: 1).setFill()
+            NSRect(origin: .zero, size: size).fill()
+            for (i, state) in states.enumerated() {
+                let y = 8 + CGFloat(i) * 34
+                NSColor(white: 0.98, alpha: 1).setFill()
+                NSBezierPath(roundedRect: NSRect(x: 8, y: y, width: size.width - 16, height: 28), xRadius: 6, yRadius: 6).fill()
+                let icon = StatusItemController.icon(progress: state.1, running: state.2, pending: state.3)
+                icon.draw(in: NSRect(x: 16, y: y + 6.5, width: 15, height: 15))
+                let parts = state.0.split(separator: " ", maxSplits: 1)
+                (String(parts[0]) as NSString).draw(at: NSPoint(x: 36, y: y + 5), withAttributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: state.2 ? .semibold : .regular), .foregroundColor: NSColor.black])
+                (String(parts[1]).trimmingCharacters(in: .whitespaces) as NSString).draw(at: NSPoint(x: 100, y: y + 6), withAttributes: [
+                    .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.darkGray])
+            }
+            return true
+        }
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: url)
     }
 
     private static func render<V: View>(_ view: V, size: CGSize, scheme: ColorScheme, to url: URL) {

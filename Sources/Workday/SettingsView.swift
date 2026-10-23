@@ -143,7 +143,8 @@ private struct NotificationSettings: View {
 
     private func minuteBinding(_ minutes: Int, cal: Calendar, set: @escaping (Int) -> Void) -> Binding<Date> {
         Binding(
-            get: { cal.startOfDay(for: Date()).addingTimeInterval(TimeInterval(minutes * 60)) },
+            // Built from hour/minute components so DST days don't shift the displayed time.
+            get: { cal.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()) ?? Date() },
             set: { set(TimeMath.minuteOfDay($0, calendar: cal)) })
     }
 }
@@ -158,7 +159,7 @@ private struct PermissionRow: View {
             case .authorized:
                 Label("Notifications are allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             case .notDetermined:
-                Label("Workday will ask for permission when you turn on a notification.", systemImage: "bell.badge")
+                Label("Workday asks for permission once when any notification below is on (the goal notice is on by default).", systemImage: "bell.badge")
             case .denied:
                 Label("Notifications are turned off for Workday in System Settings. Reminders won't appear.", systemImage: "bell.slash.fill")
                     .foregroundStyle(.orange)

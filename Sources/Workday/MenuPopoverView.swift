@@ -9,7 +9,7 @@ struct MenuPopoverView: View {
     var body: some View {
         let ledger = model.ledger
         let now = model.now
-        let today = model.today
+        let today = ledger.today(now: now)
         let total = ledger.total(for: today, now: now)
         let goal = ledger.settings.dailyGoalSeconds
         let running = ledger.isRunning
@@ -82,6 +82,7 @@ struct MenuPopoverView: View {
             if ledger.hasPendingRecovery {
                 RecoveryNotice()
             }
+            BackupFailureNotice()
 
             // Primary action: explicit, labelled with its consequence.
             Button {
@@ -176,6 +177,7 @@ struct MiniGlass: View {
     var seconds: TimeInterval
     var live: Bool
     @State private var motion = LiquidMotion()
+    @Environment(\.controlActiveState) private var activeState
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.forceReducedMotion) private var forceReducedMotion
     private var reduceMotion: Bool { systemReduceMotion || forceReducedMotion }
@@ -186,8 +188,32 @@ struct MiniGlass: View {
                                            rect: CGRect(origin: .zero, size: geo.size).insetBy(dx: 2, dy: 2),
                                            cornerRadius: 10, seconds: seconds, dimmed: false, live: live)],
                         motion: motion,
-                        cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: .key, windowVisible: true, compact: false))
+                        cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState, windowVisible: true, compact: false))
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// Non-modal warning shown when the most recent automatic backup failed.
+struct BackupFailureNotice: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if case .failed(let message) = model.backupStatus {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "externaldrive.badge.exclamationmark").foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Backup failed").font(.system(size: 12, weight: .semibold))
+                    Text(message).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Backup Settings…") { AppDelegate.shared?.showSettings() }
+                        .buttonStyle(PillButtonStyle(kind: .secondary, compact: true))
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityElement(children: .combine)
+        }
     }
 }

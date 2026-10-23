@@ -33,6 +33,10 @@ public enum DemoData {
         let bigDay = today.adding(days: -16, calendar: calendar)
         sessions.removeAll { calendar.isDate($0.0, inSameDayAs: at(bigDay, 12)) }
         sessions.append((at(bigDay, 4), at(bigDay, 23)))
+        // A second overflow day in the previous month (21h) for month-to-month evidence.
+        let bigDay2 = today.adding(days: -34, calendar: calendar)
+        sessions.removeAll { calendar.isDate($0.0, inSameDayAs: at(bigDay2, 12)) }
+        sessions.append((at(bigDay2, 2), at(bigDay2, 23)))
 
         try store.db.transaction {
             for (s, e) in sessions.sorted(by: { $0.0 < $1.0 }) {

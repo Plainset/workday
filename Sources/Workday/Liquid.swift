@@ -117,7 +117,8 @@ enum LiquidPainter {
             inner.clip(to: shape)
             let h = r.height
             let full = fraction >= 0.999
-            let level = full ? r.minY - (cell.compact ? 2 : 5) : r.maxY - h * fraction
+            // A full (18 h+) tile keeps a live surface just below the brim so it still reads as liquid.
+            let level = full ? r.minY + (cell.compact ? 1 : 3.5) : r.maxY - h * fraction
             let baseAmp = min(cell.compact ? 1.1 : 2.6, h * 0.035)
             let thin = min(1, fraction * 7 + 0.2)
             let amp = motion ? baseAmp * (0.6 + 2.4 * energy) * thin : 0
@@ -144,7 +145,7 @@ enum LiquidPainter {
                 startPoint: CGPoint(x: r.minX, y: r.midY), endPoint: CGPoint(x: r.maxX, y: r.midY)))
 
             // Lit meniscus.
-            if !full || overflow > 0 {
+            do {
                 inner.stroke(front.surface, with: .color(.white.opacity(scheme == .dark ? 0.55 : 0.7)),
                              lineWidth: cell.compact ? 0.6 : 1.3)
             }
@@ -223,8 +224,9 @@ enum LiquidPainter {
     }
 }
 
-/// Animation cadence policy: smooth while the window is key, gentle while visible in the
-/// background, paused when hidden or when Reduce Motion is on.
+/// Animation cadence policy. Frames are only produced quickly while something is actually moving
+/// (a fill settling, a slosh decaying) or a live session is adding bubbles; otherwise the liquid
+/// drifts at a low idle rate. Hidden windows and Reduce Motion pause the timeline entirely.
 struct LiquidCadence {
     var reduceMotion: Bool
     var windowState: ControlActiveState
@@ -232,13 +234,52 @@ struct LiquidCadence {
     var compact: Bool
 
     var paused: Bool { reduceMotion || !windowVisible }
-    var interval: Double {
-        if windowState == .inactive { return 1.0 / 8 }
-        return compact ? 1.0 / 20 : 1.0 / 40
+    private var inactive: Bool { windowState == .inactive }
+    /// While a fill/slosh settles.
+    var fastInterval: Double { inactive ? 1.0 / 15 : (compact ? 1.0 / 30 : 1.0 / 40) }
+    /// While a live session shows bubbles.
+    var liveInterval: Double { inactive ? 1.0 / 8 : 1.0 / 24 }
+    /// Gentle idle drift.
+    var idleInterval: Double { inactive ? 1.0 / 4 : (compact ? 1.0 / 6 : 1.0 / 10) }
+}
+
+/// A timeline whose next frame interval depends on whether the liquid is currently in motion.
+struct LiquidSchedule: TimelineSchedule {
+    let motion: LiquidMotion
+    let cadence: LiquidCadence
+    let live: Bool
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
+        Entries(date: startDate, schedule: self, lowFrequency: mode == .lowFrequency)
+    }
+
+    struct Entries: Sequence, IteratorProtocol {
+        var date: Date
+        let schedule: LiquidSchedule
+        let lowFrequency: Bool
+        var first = true
+
+        mutating func next() -> Date? {
+            if first { first = false; return date }
+            let t = date.timeIntervalSinceReferenceDate
+            let c = schedule.cadence
+            let step: Double
+            if lowFrequency {
+                step = 1
+            } else if schedule.motion.isSettling(t: Date().timeIntervalSinceReferenceDate) {
+                step = c.fastInterval
+            } else if schedule.live {
+                step = c.liveInterval
+            } else {
+                step = c.idleInterval
+            }
+            date = Date(timeIntervalSinceReferenceDate: Swift.max(t + step, Date().timeIntervalSinceReferenceDate))
+            return date
+        }
     }
 }
 
-/// A Canvas that draws many liquid tiles in a single pass, driven by one TimelineView.
+/// A Canvas that draws many liquid tiles in a single pass, driven by one adaptive TimelineView.
 struct LiquidLayer: View {
     var cells: [LiquidCell]
     var motion: LiquidMotion
@@ -246,19 +287,30 @@ struct LiquidLayer: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: cadence.interval, paused: cadence.paused)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            Canvas(rendersAsynchronously: false) { context, _ in
-                for cell in cells {
-                    let fraction = motion.fraction(for: cell.key, target: cell.targetFraction, t: t, animated: !cadence.reduceMotion)
-                    var ctx = context
-                    LiquidPainter.draw(&ctx, cell: cell, fraction: fraction,
-                                       energy: motion.energy(for: cell.key, t: t), time: t,
-                                       motion: !cadence.reduceMotion, scheme: scheme)
+        let live = cells.contains { $0.live }
+        Group {
+            if cadence.paused {
+                // Reduce Motion or hidden window: one still frame of the same data.
+                canvas(t: 0)
+            } else {
+                TimelineView(LiquidSchedule(motion: motion, cadence: cadence, live: live)) { timeline in
+                    canvas(t: timeline.date.timeIntervalSinceReferenceDate)
                 }
             }
         }
         .accessibilityHidden(true)
+    }
+
+    private func canvas(t: Double) -> some View {
+        Canvas(rendersAsynchronously: false) { context, _ in
+            for cell in cells {
+                let fraction = motion.fraction(for: cell.key, target: cell.targetFraction, t: t, animated: !cadence.paused)
+                var ctx = context
+                LiquidPainter.draw(&ctx, cell: cell, fraction: fraction,
+                                   energy: cadence.paused ? 0 : motion.energy(for: cell.key, t: t), time: t,
+                                   motion: !cadence.reduceMotion, scheme: scheme)
+            }
+        }
     }
 }
 

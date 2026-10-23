@@ -3,10 +3,18 @@ import WorkdayCore
 
 enum CalendarMode: Hashable { case month, year }
 
+/// Reduce Motion aware animation helper: springs and slides only when motion is welcome.
+private func motionAnimation(_ reduce: Bool, _ animation: Animation = .snappy(duration: 0.35)) -> Animation {
+    reduce ? .easeInOut(duration: 0.15) : animation
+}
+
 /// The main calendar window: month-first with an optional twelve-month overview.
 struct CalendarRootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.forceReducedMotion) private var forceReducedMotion
+    private var reduceMotion: Bool { systemReduceMotion || forceReducedMotion }
     @State private var month: MonthKey
     @State private var mode: CalendarMode = .month
     @State private var editingDay: DayKey?
@@ -28,28 +36,34 @@ struct CalendarRootView: View {
             SummaryStrip(month: month, mode: mode)
                 .padding(.horizontal, 28)
                 .padding(.bottom, 14)
-            if let error = model.errorMessage {
-                ErrorBanner(message: error) { model.errorMessage = nil }
-                    .padding(.horizontal, 28)
-                    .padding(.bottom, 10)
+            Group {
+                if let error = model.errorMessage {
+                    ErrorBanner(message: error) { model.errorMessage = nil }
+                }
+                if model.ledger.hasPendingRecovery {
+                    RecoveryNotice()
+                }
+                BackupFailureNotice()
+                if model.ledger.sessions.isEmpty {
+                    EmptyCalendarHint()
+                }
             }
-            if model.ledger.hasPendingRecovery {
-                RecoveryNotice()
-                    .padding(.horizontal, 28)
-                    .padding(.bottom, 10)
-            }
+            .padding(.horizontal, 28)
+            .padding(.bottom, 10)
             Group {
                 switch mode {
                 case .month:
                     MonthGridView(month: month, onOpen: { editingDay = $0 })
                         .id(month)
-                        .transition(.asymmetric(insertion: .move(edge: direction >= 0 ? .trailing : .leading).combined(with: .opacity),
-                                                removal: .opacity))
+                        .transition(reduceMotion
+                                    ? .opacity
+                                    : .asymmetric(insertion: .move(edge: direction >= 0 ? .trailing : .leading).combined(with: .opacity),
+                                                  removal: .opacity))
                 case .year:
                     YearOverviewView(year: month.year,
                                      onOpenDay: { editingDay = $0 },
                                      onOpenMonth: { m in
-                                         withAnimation(.snappy(duration: 0.35)) { month = m; mode = .month }
+                                         withAnimation(motionAnimation(reduceMotion)) { month = m; mode = .month }
                                      })
                         .id(month.year)
                         .transition(.opacity)
@@ -90,7 +104,8 @@ struct CalendarRootView: View {
         HStack(alignment: .center, spacing: 12) {
             Text(title)
                 .font(.system(size: 30, weight: .bold, design: .rounded))
-                .contentTransition(.numericText())
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             SegmentedSwitch(options: [(CalendarMode.month, "Month"), (CalendarMode.year, "Year")], selection: $mode)
@@ -128,7 +143,7 @@ struct CalendarRootView: View {
 
     private func navigate(_ step: Int) {
         direction = step
-        withAnimation(.snappy(duration: 0.35)) {
+        withAnimation(motionAnimation(reduceMotion)) {
             month = mode == .month ? month.adding(months: step) : month.adding(months: 12 * step)
         }
     }
@@ -136,7 +151,7 @@ struct CalendarRootView: View {
     private func goToday() {
         let target = MonthKey(model.today)
         direction = target < month ? -1 : 1
-        withAnimation(.snappy(duration: 0.35)) { month = target }
+        withAnimation(motionAnimation(reduceMotion)) { month = target }
     }
 }
 
@@ -156,6 +171,28 @@ struct ErrorBanner: View {
     }
 }
 
+/// Shown until the first session exists.
+struct EmptyCalendarHint: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "drop.fill").foregroundStyle(Theme.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No work recorded yet").font(.system(size: 13, weight: .semibold))
+                Text("Press Start Work here or in the menu bar. Each day fills with liquid as you work — full at 18 hours. Click a day to add time you forgot to track.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondaryText(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(Theme.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Minimal summary: month (or year) total, goal days, streak and today's goal progress.
 struct SummaryStrip: View {
     var month: MonthKey
@@ -165,7 +202,7 @@ struct SummaryStrip: View {
 
     var body: some View {
         let ledger = model.ledger
-        let now = model.now
+        let now = model.displayNow
         let total: TimeInterval
         let goalDays: Int
         if mode == .month {
@@ -178,7 +215,7 @@ struct SummaryStrip: View {
             goalDays = summaries.reduce(0) { $0 + $1.goalDays }
         }
         let streak = ledger.streak(now: now)
-        let todayTotal = model.todayTotal
+        let todayTotal = model.displayTodayTotal
 
         return HStack(spacing: 22) {
             stat(mode == .month ? "This month" : "This year", DurationFormat.short(total))
@@ -190,7 +227,7 @@ struct SummaryStrip: View {
                 Text("Today \(DurationFormat.short(todayTotal)) of \(DurationFormat.goal(minutes: ledger.settings.dailyGoalMinutes))")
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
-                ProgressLine(progress: model.goalProgress, height: 5)
+                ProgressLine(progress: model.displayGoalProgress, height: 5)
                     .frame(width: 180)
             }
             .accessibilityElement(children: .combine)
@@ -208,9 +245,31 @@ struct SummaryStrip: View {
                 Text(value)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .monospacedDigit()
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Renders `content` twice: in its normal colours above the waterline and in high-contrast
+/// on-liquid colours below it, so labels stay legible wherever the liquid surface crosses them.
+struct WaterlineSplit<Content: View>: View {
+    var fraction: Double
+    var height: CGFloat
+    var animate: Bool
+    @ViewBuilder var content: (_ submerged: Bool) -> Content
+
+    var body: some View {
+        let waterline = fraction >= 0.999 ? height : height * fraction
+        ZStack {
+            content(false)
+                .mask(alignment: .top) { Rectangle().frame(height: max(0, height - waterline)) }
+            content(true)
+                .mask(alignment: .bottom) { Rectangle().frame(height: waterline) }
+        }
+        .animation(animate ? .easeOut(duration: LiquidMotion.fillDuration) : nil, value: fraction)
     }
 }
 
@@ -237,7 +296,7 @@ struct MonthGridView: View {
         let cells = MonthGridLayout.cells(for: month, calendar: cal)
         let rows = cells.count / 7
         let ledger = model.ledger
-        let now = model.now
+        let now = model.displayNow
         let today = model.today
         let activeDays: Set<DayKey> = {
             guard let a = ledger.activeSession else { return [] }
@@ -263,8 +322,9 @@ struct MonthGridView: View {
                 let rect: (MonthGridCell) -> CGRect = { c in
                     CGRect(x: CGFloat(c.column) * (cellW + spacing), y: CGFloat(c.row) * (cellH + spacing), width: cellW, height: cellH)
                 }
+                let grow: CGFloat = reduceMotion ? 0 : 2
                 let liquidCells = cells.map { c in
-                    LiquidCell(key: c.day, rect: rect(c).insetBy(dx: hovered == c.day ? -2 : 0, dy: hovered == c.day ? -2 : 0),
+                    LiquidCell(key: c.day, rect: rect(c).insetBy(dx: hovered == c.day ? -grow : 0, dy: hovered == c.day ? -grow : 0),
                                cornerRadius: min(16, cellW * 0.14), seconds: totals[c.day] ?? 0,
                                dimmed: !c.isInDisplayedMonth, live: activeDays.contains(c.day))
                 }
@@ -284,20 +344,21 @@ struct MonthGridView: View {
                                 live: activeDays.contains(c.day),
                                 focused: gridFocused && focusedDay == c.day,
                                 size: r.size,
+                                reduceMotion: reduceMotion,
                                 open: { onOpen(c.day) })
                             .frame(width: r.width, height: r.height)
                             .offset(x: r.minX, y: r.minY)
                             .onHover { inside in
                                 if inside {
                                     hovered = c.day
-                                    motion.slosh(c.day, t: Date().timeIntervalSinceReferenceDate)
+                                    if !reduceMotion { motion.slosh(c.day, t: Date().timeIntervalSinceReferenceDate) }
                                 } else if hovered == c.day {
                                     hovered = nil
                                 }
                             }
                     }
                 }
-                .animation(.easeOut(duration: 0.15), value: hovered)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
             }
         }
         .focusable()
@@ -305,18 +366,10 @@ struct MonthGridView: View {
         .focusEffectDisabled()
         .onMoveCommand { direction in
             let current = focusedDay ?? (MonthKey(today) == month ? today : month.firstDay)
-            let step: Int
-            switch direction {
-            case .left: step = -1
-            case .right: step = 1
-            case .up: step = -7
-            case .down: step = 7
-            @unknown default: step = 0
-            }
-            let next = current.adding(days: step, calendar: cal)
+            let next = current.adding(days: gridStep(direction), calendar: cal)
             if cells.contains(where: { $0.day == next && $0.isInDisplayedMonth }) {
                 focusedDay = next
-                motion.slosh(next, t: Date().timeIntervalSinceReferenceDate)
+                if !reduceMotion { motion.slosh(next, t: Date().timeIntervalSinceReferenceDate) }
             }
         }
         .onKeyPress(.return) {
@@ -336,6 +389,16 @@ struct MonthGridView: View {
     }
 }
 
+func gridStep(_ direction: MoveCommandDirection) -> Int {
+    switch direction {
+    case .left: return -1
+    case .right: return 1
+    case .up: return -7
+    case .down: return 7
+    @unknown default: return 0
+    }
+}
+
 /// Text, marks and interaction layered over the Canvas-drawn liquid for one day.
 struct DayTile: View {
     var cell: MonthGridCell
@@ -347,75 +410,35 @@ struct DayTile: View {
     var live: Bool
     var focused: Bool
     var size: CGSize
+    var reduceMotion: Bool
     var open: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let fraction = LiquidScale.fillFraction(seconds: seconds)
-        let numberCovered = fraction > 0.72
-        let durationCovered = fraction > 0.2
         let metGoal = goalSeconds > 0 && seconds >= goalSeconds
         let corner = min(16, size.width * 0.14)
         let compactText = size.height < 70
 
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 4) {
-                    Text("\(cell.day.day)")
-                        .font(.system(size: compactText ? 13 : 16, weight: isToday ? .heavy : .semibold, design: .rounded))
-                        .foregroundStyle(numberCovered ? Theme.onLiquid : (isToday ? Theme.orangeDeep : .primary))
-                        .padding(.horizontal, isToday ? 6 : 0)
-                        .padding(.vertical, isToday ? 1 : 0)
-                        .background {
-                            if isToday && !numberCovered {
-                                Capsule().fill(Theme.orange.opacity(0.16))
-                            }
-                        }
-                    Spacer(minLength: 0)
-                    if live {
-                        Circle().fill(Theme.orange).frame(width: 7, height: 7)
-                            .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1))
-                            .padding(.top, 4)
+            Group {
+                if cell.isInDisplayedMonth {
+                    // Two-tone labels split at the waterline: always legible over liquid or tile.
+                    WaterlineSplit(fraction: fraction, height: size.height, animate: !reduceMotion) { submerged in
+                        labels(submerged: submerged, metGoal: metGoal, compactText: compactText)
                     }
-                    if metGoal {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: compactText ? 10 : 12))
-                            .foregroundStyle(numberCovered ? Theme.onLiquid.opacity(0.75) : Theme.orange)
-                            .accessibilityHidden(true)
-                    }
-                }
-                Spacer(minLength: 0)
-                if pending > 0 {
-                    Label(DurationFormat.short(pending), systemImage: "questionmark.circle.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(durationCovered ? Theme.onLiquid : .red)
-                        .labelStyle(.titleAndIcon)
-                        .help("Pending review — not counted yet")
-                }
-                HStack(alignment: .lastTextBaseline, spacing: 3) {
-                    Text(DurationFormat.short(seconds))
-                        .font(.system(size: compactText ? 11.5 : 13.5, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                        .foregroundStyle(durationCovered ? Theme.onLiquid : (seconds > 0 ? Color.primary : Theme.secondaryText(scheme).opacity(isFuture ? 0.5 : 0.9)))
-                    if LiquidScale.isOverflowing(seconds: seconds) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.onLiquid)
-                            .accessibilityHidden(true)
-                    }
+                } else {
+                    // Adjacent-month days: liquid is faded, so plain subdued labels read best.
+                    labels(submerged: false, metGoal: metGoal, compactText: compactText)
+                        .opacity(0.6)
                 }
             }
-            .padding(.horizontal, compactText ? 7 : 10)
-            .padding(.vertical, compactText ? 6 : 9)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .opacity(cell.isInDisplayedMonth ? 1 : 0.45)
         .overlay {
             if isToday {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -437,6 +460,62 @@ struct DayTile: View {
         .help("\(DateFormatter.make("EEEEdMMMMyyyy", calendar: model.calendar).string(from: cell.day.noon(in: model.calendar))) — \(DurationFormat.short(seconds))")
     }
 
+    @ViewBuilder
+    private func labels(submerged: Bool, metGoal: Bool, compactText: Bool) -> some View {
+        let primary: Color = submerged ? Theme.onLiquid : .primary
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 4) {
+                Text("\(cell.day.day)")
+                    .font(.system(size: compactText ? 13 : 16, weight: isToday ? .heavy : .semibold, design: .rounded))
+                    .foregroundStyle(submerged ? Theme.onLiquid : (isToday ? Theme.orangeDeep : .primary))
+                    .padding(.horizontal, isToday ? 6 : 0)
+                    .padding(.vertical, isToday ? 1 : 0)
+                    .background {
+                        if isToday {
+                            Capsule().fill((submerged ? Color.white : Theme.orange).opacity(submerged ? 0.35 : 0.16))
+                        }
+                    }
+                Spacer(minLength: 0)
+                if live {
+                    Circle().fill(submerged ? Theme.onLiquid : Theme.orange).frame(width: 7, height: 7)
+                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1))
+                        .padding(.top, 4)
+                }
+                if metGoal {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: compactText ? 10 : 12))
+                        .foregroundStyle(submerged ? Theme.onLiquid.opacity(0.8) : Theme.orange)
+                        .accessibilityHidden(true)
+                }
+            }
+            Spacer(minLength: 0)
+            if pending > 0 {
+                Label(DurationFormat.short(pending), systemImage: "questionmark.circle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(submerged ? Theme.onLiquid : .red)
+                    .labelStyle(.titleAndIcon)
+                    .help("Pending review — not counted yet")
+            }
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text(DurationFormat.short(seconds))
+                    .font(.system(size: compactText ? 11.5 : 13.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                    .foregroundStyle(seconds > 0 || submerged ? primary : Theme.secondaryText(scheme).opacity(isFuture ? 0.6 : 1))
+                if LiquidScale.isOverflowing(seconds: seconds) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(primary)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .padding(.horizontal, compactText ? 7 : 10)
+        .padding(.vertical, compactText ? 6 : 9)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     private func accessibilityText(metGoal: Bool) -> String {
         let date = DateFormatter.make("EEEEdMMMMyyyy", calendar: model.calendar).string(from: cell.day.noon(in: model.calendar))
         var parts = [date, DurationFormat.spoken(seconds) + (seconds > 0 ? " worked" : "")]
@@ -451,58 +530,34 @@ struct DayTile: View {
 
 // MARK: - Year overview
 
-struct YearOverviewView: View {
-    var year: Int
-    var onOpenDay: (DayKey) -> Void
-    var onOpenMonth: (MonthKey) -> Void
-    @Environment(AppModel.self) private var model
-    @Environment(\.colorScheme) private var scheme
-    @State private var hovered: DayKey?
+/// Shared geometry so the liquid canvas and the day buttons agree on every mini tile.
+enum MiniMonthGeometry {
+    static let gap: CGFloat = 3
+    static let padding: CGFloat = 12
+    static let headerHeight: CGFloat = 18
+    static let weekdayHeight: CGFloat = 11
+    static let spacing: CGFloat = 5
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Hover/focus readout with exact hours for the tiny tiles.
-            HStack(spacing: 6) {
-                Image(systemName: "hand.point.up.left").foregroundStyle(Theme.secondaryText(scheme))
-                if let hovered {
-                    Text(DateFormatter.make("EEEEdMMMMyyyy", calendar: model.calendar).string(from: hovered.noon(in: model.calendar)))
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(DurationFormat.short(model.ledger.total(for: hovered, now: model.now)))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.orangeDeep)
-                } else {
-                    Text("Hover over a day to see its exact hours · click to edit · click a month name to open it")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.secondaryText(scheme))
-                }
-            }
-            .frame(height: 18)
-            .padding(.horizontal, 6)
+    /// The day-grid area inside a mini month panel of `size`, in panel coordinates.
+    static func gridFrame(panel size: CGSize) -> CGRect {
+        let top = padding + headerHeight + spacing + weekdayHeight + spacing
+        return CGRect(x: padding, y: top, width: max(0, size.width - padding * 2), height: max(0, size.height - top - padding))
+    }
 
-            GeometryReader { geo in
-                let columns = geo.size.width > 900 ? 4 : 3
-                let rows = 12 / columns
-                let gap: CGFloat = 18
-                let w = (geo.size.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
-                let h = (geo.size.height - gap * CGFloat(rows - 1)) / CGFloat(rows)
-                ZStack(alignment: .topLeading) {
-                    ForEach(1...12, id: \.self) { m in
-                        let i = m - 1
-                        MiniMonthView(month: MonthKey(year: year, month: m), hovered: $hovered,
-                                      onOpenDay: onOpenDay, onOpenMonth: onOpenMonth)
-                            .frame(width: w, height: h)
-                            .offset(x: CGFloat(i % columns) * (w + gap), y: CGFloat(i / columns) * (h + gap))
-                    }
-                }
-            }
-        }
+    static func side(in size: CGSize) -> CGFloat {
+        max(4, min((size.width - gap * 6) / 7, (size.height - gap * 5) / 6))
+    }
+
+    /// Rect of a cell relative to the grid area's origin.
+    static func rect(_ c: MonthGridCell, in size: CGSize) -> CGRect {
+        let side = side(in: size)
+        let originX = (size.width - (side * 7 + gap * 6)) / 2
+        return CGRect(x: originX + CGFloat(c.column) * (side + gap), y: CGFloat(c.row) * (side + gap), width: side, height: side)
     }
 }
 
-struct MiniMonthView: View {
-    var month: MonthKey
-    @Binding var hovered: DayKey?
+struct YearOverviewView: View {
+    var year: Int
     var onOpenDay: (DayKey) -> Void
     var onOpenMonth: (MonthKey) -> Void
     @Environment(AppModel.self) private var model
@@ -511,19 +566,124 @@ struct MiniMonthView: View {
     @Environment(\.forceReducedMotion) private var forceReducedMotion
     private var reduceMotion: Bool { systemReduceMotion || forceReducedMotion }
     @Environment(\.controlActiveState) private var activeState
+    @State private var hovered: DayKey?
+    @State private var focusedDay: DayKey?
     @State private var motion = LiquidMotion()
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let cal = model.calendar
+        let now = model.displayNow
+        let today = model.today
+        let months = (1...12).map { MonthKey(year: year, month: $0) }
+        let days = months.flatMap { $0.days(calendar: cal) }
+        let totals = model.ledger.totals(for: days, now: now)
+        let readoutDay = (focused ? focusedDay : nil) ?? hovered
+
+        VStack(alignment: .leading, spacing: 10) {
+            // Hover/focus readout with exact hours for the tiny tiles.
+            HStack(spacing: 6) {
+                Image(systemName: focused ? "keyboard" : "hand.point.up.left").foregroundStyle(Theme.secondaryText(scheme))
+                if let day = readoutDay {
+                    Text(DateFormatter.make("EEEEdMMMMyyyy", calendar: cal).string(from: day.noon(in: cal)))
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(DurationFormat.short(totals[day] ?? 0))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.orangeDeep)
+                } else {
+                    Text("Hover over a day (or use the arrow keys) to see its exact hours · click or press Return to edit · click a month name to open it")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.secondaryText(scheme))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+            .frame(height: 18)
+            .padding(.horizontal, 6)
+            .accessibilityElement(children: .combine)
+
+            GeometryReader { geo in
+                let columns = geo.size.width > 900 ? 4 : 3
+                let rows = 12 / columns
+                let gap: CGFloat = 18
+                let w = (geo.size.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
+                let h = (geo.size.height - gap * CGFloat(rows - 1)) / CGFloat(rows)
+                let origin: (Int) -> CGPoint = { i in CGPoint(x: CGFloat(i % columns) * (w + gap), y: CGFloat(i / columns) * (h + gap)) }
+
+                // One canvas and one timeline for all 365 tiles.
+                let liquid: [LiquidCell] = months.enumerated().flatMap { i, m -> [LiquidCell] in
+                    let frame = MiniMonthGeometry.gridFrame(panel: CGSize(width: w, height: h)).offsetBy(dx: origin(i).x, dy: origin(i).y)
+                    return MonthGridLayout.cells(for: m, calendar: cal, fixedSixRows: true).filter(\.isInDisplayedMonth).map { c in
+                        let r = MiniMonthGeometry.rect(c, in: frame.size).offsetBy(dx: frame.minX, dy: frame.minY)
+                        return LiquidCell(key: c.day, rect: r, cornerRadius: r.width * 0.22, seconds: totals[c.day] ?? 0,
+                                          dimmed: false, live: false, compact: true)
+                    }
+                }
+
+                ZStack(alignment: .topLeading) {
+                    ForEach(Array(months.enumerated()), id: \.offset) { i, _ in
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Theme.panelBackground(scheme).opacity(scheme == .dark ? 0.6 : 0.85))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.tileBorder(scheme)))
+                            .frame(width: w, height: h)
+                            .offset(x: origin(i).x, y: origin(i).y)
+                    }
+                    LiquidLayer(cells: liquid, motion: motion,
+                                cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState,
+                                                       windowVisible: model.calendarVisible || AppDelegate.shared == nil,
+                                                       compact: true))
+                        .allowsHitTesting(false)
+                    ForEach(Array(months.enumerated()), id: \.offset) { i, m in
+                        MiniMonthView(month: m, totals: totals, today: today,
+                                      hovered: $hovered,
+                                      focusedDay: focused ? focusedDay : nil,
+                                      onOpenDay: onOpenDay, onOpenMonth: onOpenMonth,
+                                      onHoverDay: { day in if !reduceMotion { motion.slosh(day, t: Date().timeIntervalSinceReferenceDate) } })
+                            .frame(width: w, height: h)
+                            .offset(x: origin(i).x, y: origin(i).y)
+                    }
+                }
+            }
+        }
+        .focusable()
+        .focused($focused)
+        .focusEffectDisabled()
+        .onMoveCommand { direction in
+            let current = focusedDay ?? (today.year == year ? today : DayKey(year: year, month: 1, day: 1))
+            let next = current.adding(days: gridStep(direction), calendar: cal)
+            if next.year == year { focusedDay = next }
+        }
+        .onKeyPress(.return) {
+            if let day = focusedDay { onOpenDay(day) }
+            return .handled
+        }
+        .onAppear {
+            focusedDay = today.year == year ? today : DayKey(year: year, month: 1, day: 1)
+        }
+    }
+}
+
+struct MiniMonthView: View {
+    var month: MonthKey
+    var totals: [DayKey: TimeInterval]
+    var today: DayKey
+    @Binding var hovered: DayKey?
+    var focusedDay: DayKey?
+    var onOpenDay: (DayKey) -> Void
+    var onOpenMonth: (MonthKey) -> Void
+    var onHoverDay: (DayKey) -> Void
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let cal = model.calendar
         let cells = MonthGridLayout.cells(for: month, calendar: cal, fixedSixRows: true)
-        let ledger = model.ledger
-        let now = model.now
-        let today = model.today
-        let totals = ledger.totals(for: cells.filter(\.isInDisplayedMonth).map(\.day), now: now)
-        let monthTotal = totals.values.reduce(0, +)
+        let inMonth = cells.filter(\.isInDisplayedMonth)
+        let monthTotal = inMonth.reduce(0) { $0 + (totals[$1.day] ?? 0) }
         let name = DateFormatter.make("MMMM", calendar: cal).string(from: month.firstDay.noon(in: cal))
 
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: MiniMonthGeometry.spacing) {
             Button { onOpenMonth(month) } label: {
                 HStack(alignment: .firstTextBaseline) {
                     Text(name)
@@ -538,6 +698,7 @@ struct MiniMonthView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(height: MiniMonthGeometry.headerHeight)
             .accessibilityLabel("\(name) \(month.year), \(DurationFormat.spoken(monthTotal)). Opens month view.")
 
             HStack(spacing: 3) {
@@ -547,48 +708,46 @@ struct MiniMonthView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
+            .frame(height: MiniMonthGeometry.weekdayHeight)
             .accessibilityHidden(true)
 
             GeometryReader { geo in
-                let gap: CGFloat = 3
-                let side = min((geo.size.width - gap * 6) / 7, (geo.size.height - gap * 5) / 6)
-                let originX = (geo.size.width - (side * 7 + gap * 6)) / 2
-                let rect: (MonthGridCell) -> CGRect = { c in
-                    CGRect(x: originX + CGFloat(c.column) * (side + gap), y: CGFloat(c.row) * (side + gap), width: side, height: side)
-                }
-                let inMonth = cells.filter(\.isInDisplayedMonth)
+                let side = MiniMonthGeometry.side(in: geo.size)
                 ZStack(alignment: .topLeading) {
-                    LiquidLayer(cells: inMonth.map { c in
-                                    LiquidCell(key: c.day, rect: rect(c), cornerRadius: side * 0.22,
-                                               seconds: totals[c.day] ?? 0, dimmed: false, live: false, compact: true)
-                                },
-                                motion: motion,
-                                cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState,
-                                                       windowVisible: model.calendarVisible || AppDelegate.shared == nil,
-                                                       compact: true))
                     ForEach(inMonth) { c in
-                        let r = rect(c)
+                        let r = MiniMonthGeometry.rect(c, in: geo.size)
                         let seconds = totals[c.day] ?? 0
-                        let covered = LiquidScale.fillFraction(seconds: seconds) > 0.45
+                        let isToday = c.day == today
                         Button { onOpenDay(c.day) } label: {
-                            Text("\(c.day.day)")
-                                .font(.system(size: max(7.5, min(11, side * 0.36)), weight: c.day == today ? .heavy : .medium, design: .rounded))
-                                .foregroundStyle(covered ? Theme.onLiquid : (c.day == today ? Theme.orangeDeep : .primary.opacity(0.75)))
-                                .frame(width: r.width, height: r.height)
-                                .overlay {
-                                    if c.day == today {
-                                        RoundedRectangle(cornerRadius: side * 0.22, style: .continuous)
-                                            .strokeBorder(Theme.orange, lineWidth: 1.5)
-                                    }
+                            WaterlineSplit(fraction: LiquidScale.fillFraction(seconds: seconds), height: r.height, animate: false) { submerged in
+                                Text("\(c.day.day)")
+                                    .font(.system(size: max(7.5, min(11, side * 0.36)), weight: isToday ? .heavy : .semibold, design: .rounded))
+                                    .foregroundStyle(submerged ? Theme.onLiquid : (isToday ? Theme.orangeDeep : Color.primary.opacity(0.8)))
+                                    .frame(width: r.width, height: r.height)
+                            }
+                            .frame(width: r.width, height: r.height)
+                            .overlay {
+                                if isToday {
+                                    RoundedRectangle(cornerRadius: side * 0.22, style: .continuous)
+                                        .strokeBorder(Theme.orange, lineWidth: 1.5)
                                 }
-                                .contentShape(Rectangle())
+                            }
+                            .overlay {
+                                if focusedDay == c.day {
+                                    RoundedRectangle(cornerRadius: side * 0.22 + 2, style: .continuous)
+                                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                                        .padding(-2)
+                                }
+                            }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .focusable(false)
                         .offset(x: r.minX, y: r.minY)
                         .onHover { inside in
                             if inside {
                                 hovered = c.day
-                                motion.slosh(c.day, t: Date().timeIntervalSinceReferenceDate)
+                                onHoverDay(c.day)
                             } else if hovered == c.day { hovered = nil }
                         }
                         .help("\(DateFormatter.make("EEEdMMM", calendar: cal).string(from: c.day.noon(in: cal))) — \(DurationFormat.short(seconds))")
@@ -598,9 +757,6 @@ struct MiniMonthView: View {
                 }
             }
         }
-        .padding(12)
-        .background(Theme.panelBackground(scheme).opacity(scheme == .dark ? 0.6 : 0.85),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.tileBorder(scheme)))
+        .padding(MiniMonthGeometry.padding)
     }
 }

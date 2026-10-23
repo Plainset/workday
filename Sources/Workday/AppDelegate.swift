@@ -4,7 +4,7 @@ import WorkdayCore
 
 /// Owns the application lifecycle: menu bar item, windows, Dock policy, timers and OS signals.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     static weak var shared: AppDelegate?
 
     private(set) var model: AppModel!
@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var napActivity: NSObjectProtocol?
     private var poweringOff = false
 
+    static let showCalendarNotification = Notification.Name("local.workday.tracker.showCalendar")
+
     /// Checkpoint cadence while running; bounds the uncertainty of a crash.
     static let heartbeatInterval: TimeInterval = 30
 
@@ -31,10 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         guard let lock = SingleInstanceLock(url: WorkdayPaths.lockURL) else {
             // Another Workday is already running on this data: hand over and exit.
-            if let other = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
-                .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
-                other.activate()
-            }
+            // Ask the running instance to show its calendar so the user sees a response.
+            DistributedNotificationCenter.default().postNotificationName(Self.showCalendarNotification, object: WorkdayPaths.dataDirectory.path,
+                                                                        userInfo: nil, deliverImmediately: true)
             NSApp.terminate(nil)
             return
         }
@@ -68,7 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.launchAtLogin.refresh()
         firstLaunchSetup()
         Task {
-            await model.notifications.refresh()
+            // The goal notification is on by default, so a fresh install asks for permission once here.
+            await model.requestNotificationPermissionIfNeeded()
             model.evaluateReminders()
         }
         model.runAutomaticBackup()
@@ -182,6 +184,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.poweringOff = true
                 self?.model.ledger.checkpoint(kind: .shutdown)
             }
+            // If the logout/shutdown is cancelled by another app we keep running: re-arm the quit
+            // confirmation after a grace period.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
+                MainActor.assumeIsolated { self?.poweringOff = false }
+            }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: Self.showCalendarNotification,
+                                                            object: WorkdayPaths.dataDirectory.path, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showCalendar() }
         }
         let nc = NotificationCenter.default
         for name in [NSNotification.Name.NSSystemTimeZoneDidChange, .NSCalendarDayChanged, NSLocale.currentLocaleDidChangeNotification] {
@@ -259,7 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let window = makeWindow(title: "Interrupted Session", content: root, size: NSSize(width: 560, height: 600),
                                     minSize: NSSize(width: 520, height: 480), autosave: nil)
             window.styleMask.remove(.miniaturizable)
-            window.level = .floating
+            window.level = .normal
             recoveryWindow = window
         }
         recoveryWindow?.center()
@@ -354,8 +365,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let timerItem = NSMenuItem()
         let timerMenu = NSMenu(title: "Timer")
-        timerMenu.addItem(withTitle: "Start / Stop Timer", action: #selector(menuToggleTimer), keyEquivalent: "s").keyEquivalentModifierMask = [.command, .shift]
+        timerMenu.addItem(withTitle: "Start Timer", action: #selector(menuToggleTimer), keyEquivalent: "s").keyEquivalentModifierMask = [.command, .shift]
         timerMenu.items.last?.target = self
+        timerMenu.items.last?.tag = Self.timerMenuTag
         timerItem.submenu = timerMenu
         main.addItem(timerItem)
 
@@ -369,6 +381,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.windowsMenu = windowMenu
 
         NSApp.mainMenu = main
+    }
+
+    private static let timerMenuTag = 4242
+
+    /// Keeps the timer menu item's title explicit about what it will do.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.tag == Self.timerMenuTag {
+            menuItem.title = model?.isRunning == true
+                ? "Stop Timer (records \(DurationFormat.short(model.ledger.activeElapsed())))"
+                : "Start Timer"
+        }
+        return true
     }
 
     @objc private func menuSettings() { showSettings() }

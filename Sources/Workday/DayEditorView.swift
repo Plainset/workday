@@ -17,11 +17,12 @@ struct DayEditorView: View {
     @State private var draftStart = Date()
     @State private var draftEnd = Date()
     @State private var pendingDelete: WorkSession?
+    @State private var confirmDiscard = false
 
     var body: some View {
         let ledger = model.ledger
         let cal = model.calendar
-        let now = model.now
+        let now = model.displayNow
         let total = ledger.total(for: day, now: now)
         let pending = ledger.pendingSeconds(for: day)
         let sessions = ledger.sessions(touching: day, now: now)
@@ -74,7 +75,8 @@ struct DayEditorView: View {
                 .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
             }
 
-            // Session list
+            // Session list (scrolls when a day has many sessions or a form is open)
+            ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if sessions.isEmpty {
                     VStack(spacing: 6) {
@@ -109,7 +111,11 @@ struct DayEditorView: View {
                 sessionForm(existing: nil)
                     .padding(.horizontal, 12)
                     .background(Theme.subtleFill(scheme).opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.top, 12)
             }
+            }
+            .frame(maxHeight: 420)
+            .fixedSize(horizontal: false, vertical: true)
 
             if let error = model.errorMessage {
                 Text(error).font(.system(size: 12)).foregroundStyle(.red)
@@ -123,9 +129,11 @@ struct DayEditorView: View {
                         .help(day > model.today ? "Future dates can't have recorded work yet" : "Add a past session to this day")
                 }
                 Spacer()
-                Button("Done", action: close)
-                    .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                    .keyboardShortcut(.cancelAction)
+                Button("Done") {
+                    if draft != nil { confirmDiscard = true } else { close() }
+                }
+                .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
+                .keyboardShortcut(.cancelAction)
             }
         }
         .padding(22)
@@ -142,12 +150,18 @@ struct DayEditorView: View {
         } message: { s in
             Text(deleteMessage(s))
         }
+        .confirmationDialog("Discard the unsaved session?", isPresented: $confirmDiscard) {
+            Button("Discard Changes", role: .destructive) { draft = nil; close() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("The session you're editing hasn't been saved.")
+        }
         .onAppear { model.errorMessage = nil }
     }
 
     private func deleteMessage(_ s: WorkSession) -> String {
-        let span = TimeMath.slices(start: s.start, end: s.confirmedEnd(now: model.now), calendar: model.calendar)
-        var text = "This removes \(DurationFormat.short(s.confirmedDuration(now: model.now))) of recorded work"
+        let span = TimeMath.slices(start: s.start, end: s.confirmedEnd(now: model.displayNow), calendar: model.calendar)
+        var text = "This removes \(DurationFormat.short(s.confirmedDuration(now: model.displayNow))) of recorded work"
         if span.count > 1 { text += " across \(span.count) days" }
         if s.isActive { text += " and discards the running timer" }
         if s.isInterrupted { text += ", including the confirmed part of this interrupted session" }
@@ -159,7 +173,7 @@ struct DayEditorView: View {
         let start = day.startDate(in: cal).addingTimeInterval(9 * 3600)
         var end = day.startDate(in: cal).addingTimeInterval(17 * 3600)
         if day == model.today {
-            end = min(end, model.now)
+            end = min(end, model.displayNow)
         }
         draftStart = min(start, end.addingTimeInterval(-3600))
         draftEnd = end
@@ -169,7 +183,7 @@ struct DayEditorView: View {
 
     private func beginEdit(_ s: WorkSession) {
         draftStart = s.start
-        draftEnd = s.end ?? model.now
+        draftEnd = s.end ?? model.displayNow
         model.errorMessage = nil
         draft = .existing(s.id)
     }
@@ -186,7 +200,7 @@ struct DayEditorView: View {
                 return (error as? LocalizedError)?.errorDescription
             }
         }()
-        let impact = ledger.impact(old: existing.map { ($0.start, $0.end ?? model.now) },
+        let impact = ledger.impact(old: existing.map { ($0.start, $0.end ?? model.displayNow) },
                                    new: draftEnd > draftStart ? (draftStart, draftEnd) : nil)
         let otherDays = impact.filter { $0.day != day && abs($0.after - $0.before) >= 1 }
 
@@ -273,7 +287,7 @@ struct SessionRow: View {
 
     var body: some View {
         let cal = model.calendar
-        let now = model.now
+        let now = model.displayNow
         let end = session.state == .interrupted ? (session.detectedAt ?? session.checkpoint) : session.confirmedEnd(now: now)
         let crosses = !cal.isDate(session.start, inSameDayAs: end)
         let timeF = DateFormatter.time(calendar: cal)
