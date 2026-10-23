@@ -28,7 +28,10 @@ blocked further background GUI interaction; those steps are listed under §3 as 
 | Relaunch test instance (pending recovery in data) | `UIElement` (menu bar only, no Dock icon) |
 | Launch a second instance on the same data | second process exits 0; running instance opens its calendar (`Foreground`); one process remains |
 | CPU/memory sample, calendar window open but screen locked/occluded | 0.4–0.7 % CPU, ~34–45 MB RSS (liquid paused when not visible) |
-| computer-use GUI driving | not possible this cycle: macOS Screen Recording permission for the tool was not granted |
+| Recovery panel (M8, after permission was granted) | Found window sizing bug (window 3127 px tall) → fixed (explicit window sizes, scrollable panel). Panel shows start / last observed / relaunch / confirmed / gap, three options, late-decision "keep running" wording. Selected **Count the gap** → Apply: session closed at the relaunch instant, `recovery-resolved` event, panel closed, red badge cleared |
+| Editor (M6) | Click 23 Oct → editor; Add Session (09:00–17:00) → Save: day total 8h, "Goal met", streak 2→3, glass and tile filled immediately. Second identical session: red "This overlaps the session 09:00–17:00 on 23 Oct 2026…" and Save disabled. Done with open draft → "Discard the unsaved session?" dialog |
+| Dock policy on close (A09) | Start Work, close calendar window → `UIElement` (no Dock icon), process alive, session still `active` |
+| Second launch | running instance opens its calendar (`Foreground`) |
 
 ## 3. Manual checks still required (need a human at the Mac)
 
@@ -43,9 +46,7 @@ blocked further background GUI interaction; those steps are listed under §3 as 
   smooth in month and year views; with the window in the background animation slows; hidden → near-zero CPU.
 * **M5 VoiceOver** — ⌘F5, navigate the grid: each tile reads e.g. "Friday 23 October 2026, 6 hours 35 minutes
   worked, goal met"; arrow keys move the focus ring, Return opens the editor.
-* **M6 Editor flow** — add an overlapping session (red explanation, Save disabled), a cross-midnight session
-  (other-day preview), edit, delete with confirmation; liquid level updates immediately.
+* **M6 Editor flow** — remaining: a cross-midnight session (other-day preview) and delete confirmation (add/overlap/discard verified live).
 * **M7 Restore** — Settings → Backups → Back Up Now, change data, Restore… → confirmation → data reverts and a
   safety copy appears in the list.
-* **M8 Recovery panel** — `kill -9` while timing, relaunch: floating "Interrupted Session" panel; try Exclude /
-  Count / Custom; Apply twice is impossible; menu bar red dot clears.
+* **M8 Recovery panel** — remaining: Exclude and Custom options live (Count verified live; all three unit-tested).

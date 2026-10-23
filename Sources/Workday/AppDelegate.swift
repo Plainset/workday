@@ -287,7 +287,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = title
-        window.contentViewController = NSHostingController(rootView: content)
+        let host = NSHostingController(rootView: content)
+        // Window sizes are explicit (size + contentMinSize below). Letting SwiftUI derive them from wrapping
+        // text measured at a near-zero width produced absurdly tall windows.
+        host.sizingOptions = []
+        window.contentViewController = host
         window.setContentSize(size)
         window.contentMinSize = minSize
         window.isReleasedWhenClosed = false

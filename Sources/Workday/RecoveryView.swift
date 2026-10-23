@@ -20,7 +20,10 @@ struct RecoveryView: View {
         let pending = model.ledger.pendingRecoveries
         Group {
             if let session = pending.first {
-                content(session, remaining: pending.count - 1)
+                ScrollView {
+                    content(session, remaining: pending.count - 1)
+                        .padding(24)
+                }
                     .onAppear { initialize(session) }
                     .onChange(of: session.id) { _, _ in initialize(session) }
             } else {
@@ -31,10 +34,10 @@ struct RecoveryView: View {
                     Button("Close") { AppDelegate.shared?.closeRecovery() }
                         .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
                 }
+                .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .padding(24)
         .background(Theme.panelBackground(scheme))
     }
 
@@ -91,8 +94,8 @@ struct RecoveryView: View {
                 row("Session started", full.string(from: s.start))
                 row("Last reliably observed", "\(full.string(from: s.checkpoint)) — \(s.checkpointKind.explanation)")
                 row("Workday relaunched", full.string(from: detected))
-                row("Confirmed so far", DurationFormat.short(s.confirmedDuration(now: model.now)), bold: true)
-                row("Uncertain gap", DurationFormat.short(gap) + (s.checkpointKind.isExactStop ? " (Mac was off)" : " (exact stop time unknown)"), bold: true)
+                row("Confirmed so far", DurationFormat.precise(s.confirmedDuration(now: model.now)), bold: true)
+                row("Uncertain gap", DurationFormat.precise(gap) + (s.checkpointKind.isExactStop ? " (Mac was off)" : " (exact stop time unknown)"), bold: true)
             }
             .font(.system(size: 12.5))
             .padding(12)
@@ -157,7 +160,7 @@ struct RecoveryView: View {
                         Text("No time will be recorded for this session.").font(.system(size: 12))
                     }
                     ForEach(Array(o.pieces.enumerated()), id: \.offset) { _, p in
-                        Text(p.end.map { "\(full.string(from: p.start)) → \(full.string(from: $0))  (\(DurationFormat.short($0.timeIntervalSince(p.start))))" }
+                        Text(p.end.map { "\(full.string(from: p.start)) → \(full.string(from: $0))  (\(DurationFormat.precise($0.timeIntervalSince(p.start))))" }
                              ?? "\(full.string(from: p.start)) → running")
                             .font(.system(size: 12))
                             .monospacedDigit()
@@ -172,7 +175,6 @@ struct RecoveryView: View {
                 Text(error).font(.system(size: 12)).foregroundStyle(.red)
             }
 
-            Spacer(minLength: 0)
             HStack {
                 if remaining > 0 {
                     Text("\(remaining) more to review").font(.system(size: 11)).foregroundStyle(Theme.secondaryText(scheme))
