@@ -110,6 +110,9 @@ public final class BackupManager {
                 try destination.execute("PRAGMA journal_mode=DELETE")
                 destination.close()
             }
+            for suffix in ["-shm", "-wal"] {
+                try? fileManager.removeItem(atPath: partial.path + suffix)
+            }
             let validation = try WorkStore.validate(databaseAt: partial.path)
             try fileManager.moveItem(at: partial, to: url)
             if kind == .automatic || kind == .manual {
@@ -152,7 +155,8 @@ public final class BackupManager {
             }
         }
         let urls = (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        for url in urls where url.pathExtension == "partial" {
+        for url in urls where url.pathExtension == "partial" || url.lastPathComponent.hasSuffix(".partial-shm")
+            || url.lastPathComponent.hasSuffix(".partial-wal") {
             try? fileManager.removeItem(at: url)
         }
     }

@@ -83,7 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func firstLaunchSetup() {
         let settings = model.ledger.settings
-        if !settings.launchAtLoginInitialized && model.launchAtLogin.isBundled {
+        // Test/demo instances (custom data dir) never register a login item.
+        if !settings.launchAtLoginInitialized && model.launchAtLogin.isBundled && !WorkdayPaths.usesCustomDataDirectory {
             model.launchAtLogin.setEnabled(true)
             model.perform { try model.ledger.updateSettings { $0.launchAtLoginInitialized = true } }
         }
