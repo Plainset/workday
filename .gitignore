@@ -1,7 +1,39 @@
+# Build output
 .build/
 dist/
 .swiftpm/
 *.xcodeproj/
 DerivedData/
-.DS_Store
 evidence/tmp/
+
+# Personal data — never commit work history, databases or backups
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+Backups/
+.workday.lock
+
+# Credentials and signing material
+.env
+.env.*
+*.p12
+*.pem
+*.key
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+AuthKey_*.p8
+supabase/.env
+supabase/.temp/
+supabase/.branches/
+
+# macOS / editors
+.DS_Store
+*.swp
+.idea/
+.vscode/
+xcuserdata/

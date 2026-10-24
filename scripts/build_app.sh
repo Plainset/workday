@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-$(cat VERSION)}"
 BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 APP="$ROOT/dist/Workday.app"
 
@@ -29,8 +29,15 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 plutil -lint "$APP/Contents/Info.plist"
 
-echo "==> Signing (ad-hoc)"
-codesign --force --sign - --options runtime --timestamp=none "$APP"
+# Developer ID signing when an identity is provided (e.g. DEVELOPER_ID_APPLICATION="Developer ID Application:
+# Name (TEAMID)"); otherwise an ad-hoc signature. Hardened runtime either way. No secrets are stored in the repo.
+if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
+  echo "==> Signing with Developer ID: $DEVELOPER_ID_APPLICATION"
+  codesign --force --sign "$DEVELOPER_ID_APPLICATION" --options runtime --timestamp "$APP"
+else
+  echo "==> Signing (ad-hoc; set DEVELOPER_ID_APPLICATION for a Developer ID signature)"
+  codesign --force --sign - --options runtime --timestamp=none "$APP"
+fi
 codesign --verify --strict --verbose=2 "$APP"
 lipo -info "$APP/Contents/MacOS/Workday"
 echo "==> Done: $APP"

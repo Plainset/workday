@@ -12,6 +12,10 @@ public final class WorkStore {
 
     public init(path: String) throws {
         db = try SQLiteDatabase(path: path)
+        // Work history is personal: owner-only access for the database and its WAL/SHM sidecars.
+        for suffix in ["", "-wal", "-shm"] {
+            OwnerOnly.restrict(file: path + suffix)
+        }
         try db.execute("PRAGMA journal_mode=WAL")
         try db.execute("PRAGMA synchronous=FULL")
         try db.execute("PRAGMA foreign_keys=ON")

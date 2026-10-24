@@ -228,3 +228,21 @@ struct Cycle5RegressionTests {
         #expect(motion.fraction(for: key, target: 0.5, t: staleT, animated: true) == 0.5)
     }
 }
+
+@MainActor
+@Suite("Open-source release hardening")
+struct ReleaseHardeningTests {
+    @Test("Database, data directory and backups are owner-only")
+    func ownerOnlyPermissions() throws {
+        let dir = tempDir().appendingPathComponent("data")
+        try OwnerOnly.createDirectory(at: dir)
+        let store = try WorkStore(path: dir.appendingPathComponent("workday.sqlite").path)
+        let perms = { (path: String) in (try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber)?.intValue ?? -1 }
+        #expect(try perms(dir.path) == 0o700)
+        #expect(try perms(dir.appendingPathComponent("workday.sqlite").path) == 0o600)
+        let backups = BackupManager(store: store, directory: dir.appendingPathComponent("Backups"))
+        let b = try backups.createBackup(kind: .manual)
+        #expect(try perms(dir.appendingPathComponent("Backups").path) == 0o700)
+        #expect(try perms(b.url.path) == 0o600)
+    }
+}

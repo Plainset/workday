@@ -92,7 +92,7 @@ public final class BackupManager {
     @discardableResult
     public func createBackup(kind: BackupInfo.Kind, now: Date = Date()) throws -> BackupInfo {
         do {
-            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try OwnerOnly.createDirectory(at: directory)
             var stamp = Self.stampFormatter.string(from: now)
             var url = directory.appendingPathComponent("workday-\(kind.rawValue)-\(stamp).sqlite")
             var suffix = 1
@@ -116,6 +116,7 @@ public final class BackupManager {
             }
             let validation = try WorkStore.validate(databaseAt: partial.path)
             try fileManager.moveItem(at: partial, to: url)
+            OwnerOnly.restrict(file: url.path)
             if kind == .automatic || kind == .manual {
                 try store.setMeta("last_backup_revision", String(revision))
             }
@@ -208,6 +209,21 @@ public final class BackupManager {
     }
 }
 
+/// Owner-only (0700 directories, 0600 files) permissions for personal data.
+public enum OwnerOnly {
+    public static func createDirectory(at url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        // Also tighten a directory created by an earlier version.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+
+    public static func restrict(file path: String) {
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+    }
+}
+
 /// Standard on-disk locations. `WORKDAY_DATA_DIR` overrides the root (used for tests/demos).
 public enum WorkdayPaths {
     public static var dataDirectory: URL {
@@ -233,7 +249,7 @@ public final class SingleInstanceLock {
     private var fd: Int32 = -1
 
     public init?(url: URL) {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? OwnerOnly.createDirectory(at: url.deletingLastPathComponent())
         fd = open(url.path, O_CREAT | O_RDWR, 0o644)
         guard fd >= 0 else { return nil }
         if flock(fd, LOCK_EX | LOCK_NB) != 0 {

@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let ledger: WorkLedger
         let store: WorkStore
         do {
-            try FileManager.default.createDirectory(at: WorkdayPaths.dataDirectory, withIntermediateDirectories: true)
+            try OwnerOnly.createDirectory(at: WorkdayPaths.dataDirectory)
             store = try WorkStore(path: WorkdayPaths.databaseURL.path)
             ledger = try WorkLedger(store: store)
             // Any session still marked active belongs to a previous process that did not stop it.
