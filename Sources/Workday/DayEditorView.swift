@@ -31,7 +31,7 @@ struct DayEditorView: View {
         VStack(alignment: .leading, spacing: 16) {
             // Header
             HStack(alignment: .top, spacing: 16) {
-                MiniGlass(seconds: total, live: ledger.activeSession.map { sessions.contains($0) } ?? false)
+                MiniGlass(seconds: total, live: ledger.activeSession.map { sessions.contains($0) } ?? false, visible: model.calendarVisible)
                     .frame(width: 54, height: 70)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(DateFormatter.make("EEEEdMMMMyyyy", calendar: cal).string(from: day.noon(in: cal)))

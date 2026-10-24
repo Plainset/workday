@@ -324,6 +324,9 @@ public final class WorkLedger {
                 pieces.append(.init(start: resumed, end: detected))
             }
         }
+        if continuation != .none && clock() < detected {
+            throw LedgerError.invalidRecovery("Your Mac's clock is earlier than when Workday relaunched, so the timer can't be resumed safely. Check Date & Time, or resolve without keeping the timer running.")
+        }
         switch continuation {
         case .none:
             break

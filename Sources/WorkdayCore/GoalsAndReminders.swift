@@ -117,3 +117,22 @@ public enum NotificationPermissionPolicy {
             && (settings.goalNotificationEnabled || settings.startReminderEnabled || settings.stopReminderEnabled)
     }
 }
+
+/// VoiceOver text for a calendar day: always the full date and the exact worked time.
+public enum DayAccessibility {
+    public static func label(day: DayKey, seconds: TimeInterval, pending: TimeInterval, isToday: Bool, live: Bool,
+                             metGoal: Bool, calendar: Calendar) -> String {
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        f.locale = calendar.locale ?? .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("EEEEdMMMMyyyy")
+        var parts = [f.string(from: day.noon(in: calendar)), DurationFormat.spoken(seconds) + (seconds > 0 ? " worked" : "")]
+        if isToday { parts.insert("Today", at: 0) }
+        if live { parts.append("timer running") }
+        if metGoal { parts.append("goal met") }
+        if LiquidScale.isOverflowing(seconds: seconds) { parts.append("more than 18 hours") }
+        if pending > 0 { parts.append("\(DurationFormat.spoken(pending)) pending review") }
+        return parts.joined(separator: ", ")
+    }
+}

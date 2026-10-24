@@ -253,26 +253,6 @@ struct SummaryStrip: View {
     }
 }
 
-/// Renders `content` twice: in its normal colours above the waterline and in high-contrast
-/// on-liquid colours below it, so labels stay legible wherever the liquid surface crosses them.
-struct WaterlineSplit<Content: View>: View {
-    var fraction: Double
-    var height: CGFloat
-    var animate: Bool
-    @ViewBuilder var content: (_ submerged: Bool) -> Content
-
-    var body: some View {
-        let waterline = fraction >= 0.999 ? height : height * fraction
-        ZStack {
-            content(false)
-                .mask(alignment: .top) { Rectangle().frame(height: max(0, height - waterline)) }
-            content(true)
-                .mask(alignment: .bottom) { Rectangle().frame(height: waterline) }
-        }
-        .animation(animate ? .easeOut(duration: LiquidMotion.fillDuration) : nil, value: fraction)
-    }
-}
-
 // MARK: - Month grid
 
 struct MonthGridView: View {
@@ -328,23 +308,27 @@ struct MonthGridView: View {
                                cornerRadius: min(16, cellW * 0.14), seconds: totals[c.day] ?? 0,
                                dimmed: !c.isInDisplayedMonth, live: activeDays.contains(c.day))
                 }
+                let info: (DayKey) -> DayTileInfo = { day in
+                    DayTileInfo(day: day, seconds: totals[day] ?? 0, pending: ledger.pendingSeconds(for: day),
+                                goalSeconds: ledger.settings.dailyGoalSeconds, isToday: day == today, isFuture: day > today,
+                                live: activeDays.contains(day), compact: cellH < 70)
+                }
+                let cadence = LiquidCadence(reduceMotion: reduceMotion, windowState: activeState,
+                                            windowVisible: model.calendarVisible || AppDelegate.shared == nil, compact: false)
                 ZStack(alignment: .topLeading) {
-                    LiquidLayer(cells: liquidCells, motion: motion,
-                                cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState,
-                                                       windowVisible: model.calendarVisible || AppDelegate.shared == nil,
-                                                       compact: false))
+                    // Idle tiles and the live tile are separate layers, so a running timer only redraws
+                    // its own tile at the live rate.
+                    LiquidLayer(cells: liquidCells.filter { !$0.live }, motion: motion, cadence: cadence) { cell, submerged in
+                        DayTileLabels(info: info(cell.key), submerged: submerged)
+                    }
+                    LiquidLayer(cells: liquidCells.filter { $0.live }, motion: motion, cadence: cadence) { cell, submerged in
+                        DayTileLabels(info: info(cell.key), submerged: submerged)
+                    }
                     ForEach(cells) { c in
                         let r = rect(c)
-                        DayTile(cell: c,
-                                seconds: totals[c.day] ?? 0,
-                                pending: ledger.pendingSeconds(for: c.day),
-                                goalSeconds: ledger.settings.dailyGoalSeconds,
-                                isToday: c.day == today,
-                                isFuture: c.day > today,
-                                live: activeDays.contains(c.day),
+                        DayTile(cell: c, info: info(c.day),
                                 focused: gridFocused && focusedDay == c.day,
                                 size: r.size,
-                                reduceMotion: reduceMotion,
                                 open: { onOpen(c.day) })
                             .frame(width: r.width, height: r.height)
                             .offset(x: r.minX, y: r.minY)
@@ -361,10 +345,12 @@ struct MonthGridView: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovered)
             }
         }
+        .onContinuousHover { _ in motion.touch() }
         .focusable()
         .focused($gridFocused)
         .focusEffectDisabled()
         .onMoveCommand { direction in
+            motion.touch()
             let current = focusedDay ?? (MonthKey(today) == month ? today : month.firstDay)
             let next = current.adding(days: gridStep(direction), calendar: cal)
             if cells.contains(where: { $0.day == next && $0.isInDisplayedMonth }) {
@@ -399,48 +385,101 @@ func gridStep(_ direction: MoveCommandDirection) -> Int {
     }
 }
 
-/// Text, marks and interaction layered over the Canvas-drawn liquid for one day.
-struct DayTile: View {
-    var cell: MonthGridCell
+/// Everything a day tile shows, computed once from the ledger.
+struct DayTileInfo {
+    var day: DayKey
     var seconds: TimeInterval
     var pending: TimeInterval
     var goalSeconds: TimeInterval
     var isToday: Bool
     var isFuture: Bool
     var live: Bool
-    var focused: Bool
-    var size: CGSize
-    var reduceMotion: Bool
-    var open: () -> Void
-    @Environment(AppModel.self) private var model
+    var compact: Bool
+
+    var metGoal: Bool { goalSeconds > 0 && seconds >= goalSeconds }
+}
+
+/// The visible labels of a day tile. Rendered into the liquid Canvas twice: normal colours
+/// above the surface and `submerged` (dark on orange) below it.
+struct DayTileLabels: View {
+    var info: DayTileInfo
+    var submerged: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let fraction = LiquidScale.fillFraction(seconds: seconds)
-        let metGoal = goalSeconds > 0 && seconds >= goalSeconds
-        let corner = min(16, size.width * 0.14)
-        let compactText = size.height < 70
-
-        Button(action: open) {
-            Group {
-                if cell.isInDisplayedMonth {
-                    // Two-tone labels split at the waterline: always legible over liquid or tile.
-                    WaterlineSplit(fraction: fraction, height: size.height, animate: !reduceMotion) { submerged in
-                        labels(submerged: submerged, metGoal: metGoal, compactText: compactText)
+        let primary: Color = submerged ? Theme.onLiquid : .primary
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 4) {
+                Text("\(info.day.day)")
+                    .font(.system(size: info.compact ? 13 : 16, weight: info.isToday ? .heavy : .semibold, design: .rounded))
+                    .foregroundStyle(submerged ? Theme.onLiquid : (info.isToday ? Theme.orangeDeep : .primary))
+                    .padding(.horizontal, info.isToday ? 6 : 0)
+                    .padding(.vertical, info.isToday ? 1 : 0)
+                    .background {
+                        if info.isToday {
+                            Capsule().fill((submerged ? Color.white : Theme.orange).opacity(submerged ? 0.35 : 0.16))
+                        }
                     }
-                } else {
-                    // Adjacent-month days: liquid is faded, so plain subdued labels read best.
-                    labels(submerged: false, metGoal: metGoal, compactText: compactText)
-                        .opacity(0.6)
+                Spacer(minLength: 0)
+                if info.live {
+                    Circle().fill(submerged ? Theme.onLiquid : Theme.orange).frame(width: 7, height: 7)
+                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1))
+                        .padding(.top, 4)
+                }
+                if info.metGoal {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: info.compact ? 10 : 12))
+                        .foregroundStyle(submerged ? Theme.onLiquid.opacity(0.8) : Theme.orange)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            Spacer(minLength: 0)
+            if info.pending > 0 {
+                Label(DurationFormat.short(info.pending), systemImage: "questionmark.circle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(submerged ? Theme.onLiquid : .red)
+                    .labelStyle(.titleAndIcon)
+            }
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text(DurationFormat.short(info.seconds))
+                    .font(.system(size: info.compact ? 11.5 : 13.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                    .foregroundStyle(info.seconds > 0 || submerged ? primary
+                                     : Theme.secondaryText(scheme).opacity(info.isFuture ? 0.6 : 1))
+                if LiquidScale.isOverflowing(seconds: info.seconds) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(primary)
+                }
+            }
+        }
+        .padding(.horizontal, info.compact ? 7 : 10)
+        .padding(.vertical, info.compact ? 6 : 9)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Interaction, rings and accessibility for one day; the visible labels are drawn in the liquid Canvas.
+struct DayTile: View {
+    var cell: MonthGridCell
+    var info: DayTileInfo
+    var focused: Bool
+    var size: CGSize
+    var open: () -> Void
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let corner = min(16, size.width * 0.14)
+        Button(action: open) {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         }
         .buttonStyle(.plain)
         .focusable(false)
         .overlay {
-            if isToday {
+            if info.isToday {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .strokeBorder(Theme.orange, lineWidth: 2)
             }
@@ -453,78 +492,13 @@ struct DayTile: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText(metGoal: metGoal))
+        .accessibilityLabel(DayAccessibility.label(day: info.day, seconds: info.seconds, pending: info.pending,
+                                                   isToday: info.isToday, live: info.live, metGoal: info.metGoal,
+                                                   calendar: model.calendar))
         .accessibilityHint("Opens the session editor for this day")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { open() }
-        .help("\(DateFormatter.make("EEEEdMMMMyyyy", calendar: model.calendar).string(from: cell.day.noon(in: model.calendar))) — \(DurationFormat.short(seconds))")
-    }
-
-    @ViewBuilder
-    private func labels(submerged: Bool, metGoal: Bool, compactText: Bool) -> some View {
-        let primary: Color = submerged ? Theme.onLiquid : .primary
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 4) {
-                Text("\(cell.day.day)")
-                    .font(.system(size: compactText ? 13 : 16, weight: isToday ? .heavy : .semibold, design: .rounded))
-                    .foregroundStyle(submerged ? Theme.onLiquid : (isToday ? Theme.orangeDeep : .primary))
-                    .padding(.horizontal, isToday ? 6 : 0)
-                    .padding(.vertical, isToday ? 1 : 0)
-                    .background {
-                        if isToday {
-                            Capsule().fill((submerged ? Color.white : Theme.orange).opacity(submerged ? 0.35 : 0.16))
-                        }
-                    }
-                Spacer(minLength: 0)
-                if live {
-                    Circle().fill(submerged ? Theme.onLiquid : Theme.orange).frame(width: 7, height: 7)
-                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1))
-                        .padding(.top, 4)
-                }
-                if metGoal {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: compactText ? 10 : 12))
-                        .foregroundStyle(submerged ? Theme.onLiquid.opacity(0.8) : Theme.orange)
-                        .accessibilityHidden(true)
-                }
-            }
-            Spacer(minLength: 0)
-            if pending > 0 {
-                Label(DurationFormat.short(pending), systemImage: "questionmark.circle.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(submerged ? Theme.onLiquid : .red)
-                    .labelStyle(.titleAndIcon)
-                    .help("Pending review — not counted yet")
-            }
-            HStack(alignment: .lastTextBaseline, spacing: 3) {
-                Text(DurationFormat.short(seconds))
-                    .font(.system(size: compactText ? 11.5 : 13.5, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                    .foregroundStyle(seconds > 0 || submerged ? primary : Theme.secondaryText(scheme).opacity(isFuture ? 0.6 : 1))
-                if LiquidScale.isOverflowing(seconds: seconds) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(primary)
-                        .accessibilityHidden(true)
-                }
-            }
-        }
-        .padding(.horizontal, compactText ? 7 : 10)
-        .padding(.vertical, compactText ? 6 : 9)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private func accessibilityText(metGoal: Bool) -> String {
-        let date = DateFormatter.make("EEEEdMMMMyyyy", calendar: model.calendar).string(from: cell.day.noon(in: model.calendar))
-        var parts = [date, DurationFormat.spoken(seconds) + (seconds > 0 ? " worked" : "")]
-        if isToday { parts.insert("Today", at: 0) }
-        if live { parts.append("timer running") }
-        if metGoal { parts.append("goal met") }
-        if LiquidScale.isOverflowing(seconds: seconds) { parts.append("more than 18 hours") }
-        if pending > 0 { parts.append("\(DurationFormat.spoken(pending)) pending review") }
-        return parts.joined(separator: ", ")
+        .help("\(DateFormatter.make("EEEEdMMMMyyyy", calendar: model.calendar).string(from: cell.day.noon(in: model.calendar))) — \(DurationFormat.short(info.seconds))")
     }
 }
 
@@ -537,6 +511,11 @@ enum MiniMonthGeometry {
     static let headerHeight: CGFloat = 18
     static let weekdayHeight: CGFloat = 11
     static let spacing: CGFloat = 5
+    /// Smallest tile on which a two-digit day number is legible.
+    static let minimumSide: CGFloat = 14
+    static let panelGap: CGFloat = 18
+
+    static var chromeHeight: CGFloat { padding * 2 + headerHeight + spacing + weekdayHeight + spacing }
 
     /// The day-grid area inside a mini month panel of `size`, in panel coordinates.
     static func gridFrame(panel size: CGSize) -> CGRect {
@@ -545,7 +524,7 @@ enum MiniMonthGeometry {
     }
 
     static func side(in size: CGSize) -> CGFloat {
-        max(4, min((size.width - gap * 6) / 7, (size.height - gap * 5) / 6))
+        max(1, min((size.width - gap * 6) / 7, (size.height - gap * 5) / 6))
     }
 
     /// Rect of a cell relative to the grid area's origin.
@@ -553,6 +532,44 @@ enum MiniMonthGeometry {
         let side = side(in: size)
         let originX = (size.width - (side * 7 + gap * 6)) / 2
         return CGRect(x: originX + CGFloat(c.column) * (side + gap), y: CGFloat(c.row) * (side + gap), width: side, height: side)
+    }
+
+    struct Layout: Equatable {
+        var columns: Int
+        var panel: CGSize
+        var contentHeight: CGFloat
+        var scrolls: Bool
+        var side: CGFloat
+    }
+
+    /// Picks the arrangement (6×2, 4×3, 3×4 or 2×6) that gives the largest tiles. If even the best one
+    /// would make tiles smaller than `minimumSide`, panels get their natural height and the year scrolls.
+    static func layout(for size: CGSize) -> Layout {
+        var best: Layout?
+        for columns in [6, 4, 3, 2] {
+            let rows = 12 / columns
+            let w = (size.width - panelGap * CGFloat(columns - 1)) / CGFloat(columns)
+            let h = (size.height - panelGap * CGFloat(rows - 1)) / CGFloat(rows)
+            let grid = gridFrame(panel: CGSize(width: w, height: h)).size
+            let side = Self.side(in: grid)
+            if side > (best?.side ?? 0) {
+                best = Layout(columns: columns, panel: CGSize(width: w, height: h), contentHeight: size.height, scrolls: false, side: side)
+            }
+        }
+        if let best, best.side >= minimumSide { return best }
+        // Scroll: choose the column count whose width gives the largest tile (capped for balance).
+        var scrolled: Layout?
+        for columns in [4, 3, 2] {
+            let rows = 12 / columns
+            let w = (size.width - panelGap * CGFloat(columns - 1)) / CGFloat(columns)
+            let side = min(26, (w - padding * 2 - gap * 6) / 7)
+            if side > (scrolled?.side ?? 0) {
+                let h = chromeHeight + side * 6 + gap * 5
+                scrolled = Layout(columns: columns, panel: CGSize(width: w, height: h),
+                                  contentHeight: h * CGFloat(rows) + panelGap * CGFloat(rows - 1), scrolls: true, side: side)
+            }
+        }
+        return scrolled ?? best!
     }
 }
 
@@ -578,12 +595,12 @@ struct YearOverviewView: View {
         let months = (1...12).map { MonthKey(year: year, month: $0) }
         let days = months.flatMap { $0.days(calendar: cal) }
         let totals = model.ledger.totals(for: days, now: now)
-        let readoutDay = (focused ? focusedDay : nil) ?? hovered
+        // A day under the pointer wins; otherwise the keyboard-focused day.
+        let readoutDay = hovered ?? (focused ? focusedDay : nil)
 
         VStack(alignment: .leading, spacing: 10) {
-            // Hover/focus readout with exact hours for the tiny tiles.
             HStack(spacing: 6) {
-                Image(systemName: focused ? "keyboard" : "hand.point.up.left").foregroundStyle(Theme.secondaryText(scheme))
+                Image(systemName: hovered == nil && focused ? "keyboard" : "hand.point.up.left").foregroundStyle(Theme.secondaryText(scheme))
                 if let day = readoutDay {
                     Text(DateFormatter.make("EEEEdMMMMyyyy", calendar: cal).string(from: day.noon(in: cal)))
                         .font(.system(size: 12, weight: .semibold))
@@ -604,45 +621,15 @@ struct YearOverviewView: View {
             .accessibilityElement(children: .combine)
 
             GeometryReader { geo in
-                let columns = geo.size.width > 900 ? 4 : 3
-                let rows = 12 / columns
-                let gap: CGFloat = 18
-                let w = (geo.size.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
-                let h = (geo.size.height - gap * CGFloat(rows - 1)) / CGFloat(rows)
-                let origin: (Int) -> CGPoint = { i in CGPoint(x: CGFloat(i % columns) * (w + gap), y: CGFloat(i / columns) * (h + gap)) }
-
-                // One canvas and one timeline for all 365 tiles.
-                let liquid: [LiquidCell] = months.enumerated().flatMap { i, m -> [LiquidCell] in
-                    let frame = MiniMonthGeometry.gridFrame(panel: CGSize(width: w, height: h)).offsetBy(dx: origin(i).x, dy: origin(i).y)
-                    return MonthGridLayout.cells(for: m, calendar: cal, fixedSixRows: true).filter(\.isInDisplayedMonth).map { c in
-                        let r = MiniMonthGeometry.rect(c, in: frame.size).offsetBy(dx: frame.minX, dy: frame.minY)
-                        return LiquidCell(key: c.day, rect: r, cornerRadius: r.width * 0.22, seconds: totals[c.day] ?? 0,
-                                          dimmed: false, live: false, compact: true)
+                let layout = MiniMonthGeometry.layout(for: geo.size)
+                let content = yearContent(layout: layout, months: months, totals: totals, today: today, cal: cal)
+                if layout.scrolls && !LiquidMotion.settleInstantly {
+                    ScrollView(.vertical) {
+                        content.frame(width: geo.size.width, height: layout.contentHeight, alignment: .topLeading)
                     }
-                }
-
-                ZStack(alignment: .topLeading) {
-                    ForEach(Array(months.enumerated()), id: \.offset) { i, _ in
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Theme.panelBackground(scheme).opacity(scheme == .dark ? 0.6 : 0.85))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.tileBorder(scheme)))
-                            .frame(width: w, height: h)
-                            .offset(x: origin(i).x, y: origin(i).y)
-                    }
-                    LiquidLayer(cells: liquid, motion: motion,
-                                cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState,
-                                                       windowVisible: model.calendarVisible || AppDelegate.shared == nil,
-                                                       compact: true))
-                        .allowsHitTesting(false)
-                    ForEach(Array(months.enumerated()), id: \.offset) { i, m in
-                        MiniMonthView(month: m, totals: totals, today: today,
-                                      hovered: $hovered,
-                                      focusedDay: focused ? focusedDay : nil,
-                                      onOpenDay: onOpenDay, onOpenMonth: onOpenMonth,
-                                      onHoverDay: { day in if !reduceMotion { motion.slosh(day, t: Date().timeIntervalSinceReferenceDate) } })
-                            .frame(width: w, height: h)
-                            .offset(x: origin(i).x, y: origin(i).y)
-                    }
+                } else {
+                    // (Offscreen snapshots can't render AppKit scroll views; they show the top of the content.)
+                    content.frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading).clipped()
                 }
             }
         }
@@ -650,6 +637,7 @@ struct YearOverviewView: View {
         .focused($focused)
         .focusEffectDisabled()
         .onMoveCommand { direction in
+            hovered = nil
             let current = focusedDay ?? (today.year == year ? today : DayKey(year: year, month: 1, day: 1))
             let next = current.adding(days: gridStep(direction), calendar: cal)
             if next.year == year { focusedDay = next }
@@ -658,16 +646,69 @@ struct YearOverviewView: View {
             if let day = focusedDay { onOpenDay(day) }
             return .handled
         }
+        .onKeyPress(.space) {
+            if let day = focusedDay { onOpenDay(day) }
+            return .handled
+        }
         .onAppear {
             focusedDay = today.year == year ? today : DayKey(year: year, month: 1, day: 1)
+            focused = true
+        }
+    }
+
+    @ViewBuilder
+    private func yearContent(layout: MiniMonthGeometry.Layout, months: [MonthKey], totals: [DayKey: TimeInterval],
+                             today: DayKey, cal: Calendar) -> some View {
+        let gap = MiniMonthGeometry.panelGap
+        let w = layout.panel.width, h = layout.panel.height
+        let origin: (Int) -> CGPoint = { i in CGPoint(x: CGFloat(i % layout.columns) * (w + gap), y: CGFloat(i / layout.columns) * (h + gap)) }
+        let showNumbers = layout.side >= MiniMonthGeometry.minimumSide
+
+        // One canvas and one timeline for all 365 tiles, numbers included.
+        let liquid: [LiquidCell] = months.enumerated().flatMap { i, m -> [LiquidCell] in
+            let frame = MiniMonthGeometry.gridFrame(panel: layout.panel).offsetBy(dx: origin(i).x, dy: origin(i).y)
+            return MonthGridLayout.cells(for: m, calendar: cal, fixedSixRows: true).filter(\.isInDisplayedMonth).map { c in
+                let r = MiniMonthGeometry.rect(c, in: frame.size).offsetBy(dx: frame.minX, dy: frame.minY)
+                return LiquidCell(key: c.day, rect: r, cornerRadius: r.width * 0.22, seconds: totals[c.day] ?? 0,
+                                  dimmed: false, live: false, compact: true)
+            }
+        }
+
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(months.enumerated()), id: \.offset) { i, _ in
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Theme.panelBackground(scheme).opacity(scheme == .dark ? 0.6 : 0.85))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.tileBorder(scheme)))
+                    .frame(width: w, height: h)
+                    .offset(x: origin(i).x, y: origin(i).y)
+            }
+            LiquidLayer(cells: liquid, motion: motion,
+                        cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState,
+                                               windowVisible: model.calendarVisible || AppDelegate.shared == nil,
+                                               compact: true))
+            .allowsHitTesting(false)
+            ForEach(Array(months.enumerated()), id: \.offset) { i, m in
+                MiniMonthView(month: m, totals: totals, today: today, showNumbers: showNumbers,
+                              hovered: $hovered,
+                              focusedDay: focused ? focusedDay : nil,
+                              onOpenDay: onOpenDay, onOpenMonth: onOpenMonth,
+                              onHoverDay: { day in if !reduceMotion { motion.slosh(day, t: Date().timeIntervalSinceReferenceDate) } })
+                    .frame(width: w, height: h)
+                    .offset(x: origin(i).x, y: origin(i).y)
+            }
         }
     }
 }
 
+/// Header, weekday row, day numbers and interaction for one mini month. Kept deliberately light:
+/// numbers are one static Canvas (split at each tile's waterline), hover/click is one surface that maps
+/// the pointer to a day, and VoiceOver gets one accessibility child per day. The animated liquid is drawn
+/// by the year view's shared Canvas underneath.
 struct MiniMonthView: View {
     var month: MonthKey
     var totals: [DayKey: TimeInterval]
     var today: DayKey
+    var showNumbers: Bool
     @Binding var hovered: DayKey?
     var focusedDay: DayKey?
     var onOpenDay: (DayKey) -> Void
@@ -695,6 +736,7 @@ struct MiniMonthView: View {
                         .monospacedDigit()
                         .foregroundStyle(Theme.secondaryText(scheme))
                 }
+                .lineLimit(1)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -712,47 +754,71 @@ struct MiniMonthView: View {
             .accessibilityHidden(true)
 
             GeometryReader { geo in
-                let side = MiniMonthGeometry.side(in: geo.size)
-                ZStack(alignment: .topLeading) {
-                    ForEach(inMonth) { c in
-                        let r = MiniMonthGeometry.rect(c, in: geo.size)
-                        let seconds = totals[c.day] ?? 0
-                        let isToday = c.day == today
-                        Button { onOpenDay(c.day) } label: {
-                            WaterlineSplit(fraction: LiquidScale.fillFraction(seconds: seconds), height: r.height, animate: false) { submerged in
-                                Text("\(c.day.day)")
-                                    .font(.system(size: max(7.5, min(11, side * 0.36)), weight: isToday ? .heavy : .semibold, design: .rounded))
-                                    .foregroundStyle(submerged ? Theme.onLiquid : (isToday ? Theme.orangeDeep : Color.primary.opacity(0.8)))
-                                    .frame(width: r.width, height: r.height)
-                            }
+                let size = geo.size
+                let side = MiniMonthGeometry.side(in: size)
+                let rects = inMonth.map { ($0.day, MiniMonthGeometry.rect($0, in: size)) }
+                let dayAt: (CGPoint) -> DayKey? = { p in rects.first { $0.1.insetBy(dx: -1.5, dy: -1.5).contains(p) }?.0 }
+                Canvas { context, _ in
+                    let corner = side * 0.22
+                    for (day, r) in rects {
+                        let seconds = totals[day] ?? 0
+                        let isToday = day == today
+                        if isToday {
+                            context.stroke(Path(roundedRect: r.insetBy(dx: 0.75, dy: 0.75), cornerRadius: corner, style: .continuous),
+                                           with: .color(Theme.orange), lineWidth: 1.5)
+                        }
+                        if focusedDay == day {
+                            context.stroke(Path(roundedRect: r.insetBy(dx: -2, dy: -2), cornerRadius: corner + 2, style: .continuous),
+                                           with: .color(.accentColor), lineWidth: 2)
+                        }
+                        guard showNumbers else { continue }
+                        let font = Font.system(size: min(11, max(8, side * 0.4)), weight: isToday ? .heavy : .semibold, design: .rounded)
+                        let normal = context.resolve(Text("\(day.day)").font(font)
+                            .foregroundStyle(isToday ? Theme.orangeDeep : Color.primary.opacity(0.8)))
+                        let fraction = LiquidScale.fillFraction(seconds: seconds)
+                        let waterline = r.maxY - r.height * (fraction >= 0.999 ? 1 : fraction)
+                        var above = context
+                        above.clip(to: Path(CGRect(x: r.minX, y: r.minY, width: r.width, height: max(0, waterline - r.minY))))
+                        above.draw(normal, at: CGPoint(x: r.midX, y: r.midY))
+                        if fraction > 0 {
+                            let submerged = context.resolve(Text("\(day.day)").font(font).foregroundStyle(Theme.onLiquid))
+                            var below = context
+                            below.clip(to: Path(CGRect(x: r.minX, y: waterline, width: r.width, height: r.maxY - waterline)))
+                            below.draw(submerged, at: CGPoint(x: r.midX, y: r.midY))
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let p):
+                        let day = dayAt(p)
+                        if day != hovered {
+                            hovered = day
+                            if let day { onHoverDay(day) }
+                        }
+                    case .ended:
+                        if let h = hovered, inMonth.contains(where: { $0.day == h }) { hovered = nil }
+                    }
+                }
+                .gesture(SpatialTapGesture().onEnded { value in
+                    if let day = dayAt(value.location) { onOpenDay(day) }
+                })
+                .help(hovered.flatMap { h in inMonth.contains { $0.day == h } ? "\(DateFormatter.make("EEEdMMM", calendar: cal).string(from: h.noon(in: cal))) — \(DurationFormat.short(totals[h] ?? 0))" : nil } ?? "")
+                .accessibilityElement(children: .contain)
+                .accessibilityChildren {
+                    ForEach(rects, id: \.0) { day, r in
+                        let seconds = totals[day] ?? 0
+                        Rectangle()
                             .frame(width: r.width, height: r.height)
-                            .overlay {
-                                if isToday {
-                                    RoundedRectangle(cornerRadius: side * 0.22, style: .continuous)
-                                        .strokeBorder(Theme.orange, lineWidth: 1.5)
-                                }
-                            }
-                            .overlay {
-                                if focusedDay == c.day {
-                                    RoundedRectangle(cornerRadius: side * 0.22 + 2, style: .continuous)
-                                        .strokeBorder(Color.accentColor, lineWidth: 2)
-                                        .padding(-2)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .offset(x: r.minX, y: r.minY)
-                        .onHover { inside in
-                            if inside {
-                                hovered = c.day
-                                onHoverDay(c.day)
-                            } else if hovered == c.day { hovered = nil }
-                        }
-                        .help("\(DateFormatter.make("EEEdMMM", calendar: cal).string(from: c.day.noon(in: cal))) — \(DurationFormat.short(seconds))")
-                        .accessibilityLabel("\(DateFormatter.make("EEEEdMMMMyyyy", calendar: cal).string(from: c.day.noon(in: cal))), \(DurationFormat.spoken(seconds))")
-                        .accessibilityHint("Opens the session editor for this day")
+                            .position(x: r.midX, y: r.midY)
+                            .accessibilityLabel(DayAccessibility.label(day: day, seconds: seconds, pending: model.ledger.pendingSeconds(for: day),
+                                                                       isToday: day == today, live: false,
+                                                                       metGoal: seconds >= model.ledger.settings.dailyGoalSeconds,
+                                                                       calendar: cal))
+                            .accessibilityHint("Opens the session editor for this day")
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityAction { onOpenDay(day) }
                     }
                 }
             }

@@ -40,7 +40,11 @@ final class LiquidMotion {
             if target > 0 { impulses[key] = t }
             return 0
         }
-        if abs(tr.to - target) > 0.0001 {
+        if abs(tr.to - target) > 0.0001 && abs(tr.to - target) < 0.01 && t - tr.start >= Self.fillDuration {
+            // Tiny change (e.g. the live minute ticking over): apply quietly, no slosh, no fast frames.
+            tr = Transition(from: target, to: target, start: t - Self.fillDuration)
+            transitions[key] = tr
+        } else if abs(tr.to - target) > 0.0001 {
             let current = value(tr, t)
             tr = Transition(from: current, to: target, start: t)
             transitions[key] = tr
@@ -57,7 +61,15 @@ final class LiquidMotion {
         return tr.from + (tr.to - tr.from) * eased
     }
 
-    func slosh(_ key: DayKey, t: Double) { impulses[key] = t }
+    /// Last time the user interacted with these tiles (pointer movement, keys, navigation).
+    private(set) var lastInteraction: Double = Date().timeIntervalSinceReferenceDate
+
+    func touch(t: Double = Date().timeIntervalSinceReferenceDate) { lastInteraction = t }
+
+    /// How long the idle drift keeps animating after the last interaction.
+    static let idleDriftDuration: Double = 30
+
+    func slosh(_ key: DayKey, t: Double) { impulses[key] = t; lastInteraction = t }
     func sloshAll(t: Double) { globalImpulse = t }
 
     /// Slosh energy 0...1, decaying after an impulse.
@@ -67,8 +79,12 @@ final class LiquidMotion {
         return min(1, local + global)
     }
 
+    /// Perf harness only: pretend something is always moving.
+    nonisolated(unsafe) static var forceSettling = false
+
     /// True while any transition or slosh is still settling.
     func isSettling(t: Double) -> Bool {
+        if Self.forceSettling { return true }
         if t - globalImpulse < 3 { return true }
         if impulses.values.contains(where: { t - $0 < 3 }) { return true }
         return transitions.values.contains { t - $0.start < Self.fillDuration }
@@ -84,13 +100,16 @@ enum LiquidPainter {
         return Double(x % 10_000) / 10_000 * 2 * .pi
     }
 
+    /// Draws one tile and returns the liquid body path (for clipping submerged labels), if any.
+    @discardableResult
     static func draw(_ context: inout GraphicsContext,
                      cell: LiquidCell,
                      fraction: Double,
                      energy: Double,
                      time: Double,
                      motion: Bool,
-                     scheme: ColorScheme) {
+                     scheme: ColorScheme) -> Path? {
+        var liquidBody: Path?
         let r = cell.rect
         let shape = Path(roundedRect: r, cornerRadius: cell.cornerRadius, style: .continuous)
         var g = context
@@ -132,17 +151,21 @@ enum LiquidPainter {
             // Front body with vertical gradient.
             let front = wave(in: r, level: level, amplitude: amp, time: tSafe, phase: phase,
                              frequency: 1.0, speed: 1.35, segments: segments)
+            liquidBody = front.fill
             inner.fill(front.fill, with: .linearGradient(
                 Gradient(colors: [Theme.liquidTop(scheme).opacity(0.94), Theme.liquidBottom(scheme).opacity(0.97)]),
                 startPoint: CGPoint(x: r.midX, y: max(level, r.minY)), endPoint: CGPoint(x: r.midX, y: r.maxY)))
 
-            // Side gloss for a glassy, dimensional feel.
+            // Side gloss for a glassy, dimensional feel (skipped on tiny year tiles).
+            if !cell.compact {
             inner.fill(front.fill, with: .linearGradient(
                 Gradient(stops: [.init(color: .white.opacity(0.22), location: 0),
                                  .init(color: .white.opacity(0.0), location: 0.35),
                                  .init(color: .clear, location: 0.8),
                                  .init(color: Theme.orangeDeep.opacity(0.25), location: 1)]),
                 startPoint: CGPoint(x: r.minX, y: r.midY), endPoint: CGPoint(x: r.maxX, y: r.midY)))
+
+            }
 
             // Lit meniscus.
             do {
@@ -182,9 +205,11 @@ enum LiquidPainter {
         }
 
         // Glass highlight over the whole tile.
+        if !cell.compact {
         g.fill(shape, with: .linearGradient(
             Gradient(colors: [.white.opacity(scheme == .dark ? 0.06 : 0.18), .clear]),
             startPoint: CGPoint(x: r.minX, y: r.minY), endPoint: CGPoint(x: r.minX + r.width * 0.6, y: r.minY + r.height * 0.6)))
+        }
 
         // Border; brighter rim when overflowing.
         if overflow > 0 {
@@ -195,6 +220,7 @@ enum LiquidPainter {
         } else {
             g.stroke(shape, with: .color(Theme.tileBorder(scheme)), lineWidth: 1)
         }
+        return liquidBody
     }
 
     private static func frac(_ x: Double) -> Double { x - x.rounded(.down) }
@@ -224,6 +250,64 @@ enum LiquidPainter {
     }
 }
 
+/// Draws many small (year view) tiles with a handful of batched draw calls: all tile bases in one fill,
+/// all liquid bodies in one fill, all meniscus lines in one stroke, all borders in one stroke.
+enum CompactLiquidPainter {
+    static func draw(_ context: inout GraphicsContext, cells: [LiquidCell], motion: LiquidMotion, t: Double,
+                     animatedWaves: Bool, scheme: ColorScheme) {
+        var bases = Path()
+        var bodies = Path()
+        var surfaces = Path()
+        var overflowRims = Path()
+        let tSafe = t.truncatingRemainder(dividingBy: 10_000)
+        for cell in cells {
+            let r = cell.rect
+            let radius = cell.cornerRadius
+            bases.addRoundedRect(in: r, cornerSize: CGSize(width: radius, height: radius), style: .continuous)
+            let fraction = cell.targetFraction // tiny tiles don't animate their fill level
+            guard fraction > 0.0005 else { continue }
+            let full = fraction >= 0.999
+            let level = full ? r.minY + 1 : r.maxY - r.height * fraction
+            let amp: CGFloat = animatedWaves ? min(1.1, r.height * 0.04) * (0.6 + 2 * motion.energy(for: cell.key, t: t)) : 0
+            let phase = LiquidPainter.seed(cell.key)
+            let segments = 6
+            // Body: wave across the top, then follow the tile's rounded bottom.
+            let bottomRadius = min(radius, r.height * fraction)
+            var body = Path()
+            var surface = Path()
+            for i in 0...segments {
+                let u = Double(i) / Double(segments)
+                let x = r.minX + r.width * u
+                let a = 2 * .pi * u + tSafe * 1.35 + phase
+                let y = max(r.minY, level + amp * sin(a))
+                if i == 0 { body.move(to: CGPoint(x: x, y: y)); surface.move(to: CGPoint(x: x, y: y)) }
+                else { body.addLine(to: CGPoint(x: x, y: y)); surface.addLine(to: CGPoint(x: x, y: y)) }
+            }
+            body.addLine(to: CGPoint(x: r.maxX, y: r.maxY - bottomRadius))
+            body.addQuadCurve(to: CGPoint(x: r.maxX - bottomRadius, y: r.maxY), control: CGPoint(x: r.maxX, y: r.maxY))
+            body.addLine(to: CGPoint(x: r.minX + bottomRadius, y: r.maxY))
+            body.addQuadCurve(to: CGPoint(x: r.minX, y: r.maxY - bottomRadius), control: CGPoint(x: r.minX, y: r.maxY))
+            body.closeSubpath()
+            bodies.addPath(body)
+            surfaces.addPath(surface)
+            if cell.overflow > 0 {
+                overflowRims.addRoundedRect(in: r, cornerSize: CGSize(width: radius, height: radius), style: .continuous)
+            }
+        }
+        context.fill(bases, with: .color(Theme.tileBase(scheme)))
+        context.fill(bodies, with: .color(Theme.liquidBottom(scheme).opacity(0.92)))
+        context.stroke(surfaces, with: .color(Theme.liquidTop(scheme)), lineWidth: 1)
+        context.stroke(bases, with: .color(Theme.tileBorder(scheme)), lineWidth: 0.8)
+        if !overflowRims.isEmpty {
+            context.drawLayer { layer in
+                layer.addFilter(.blur(radius: 2.5))
+                layer.stroke(overflowRims, with: .color(Theme.orange.opacity(0.9)), lineWidth: 2.5)
+            }
+            context.stroke(overflowRims, with: .color(Color(red: 1, green: 0.93, blue: 0.7)), lineWidth: 1.2)
+        }
+    }
+}
+
 /// Animation cadence policy. Frames are only produced quickly while something is actually moving
 /// (a fill settling, a slosh decaying) or a live session is adding bubbles; otherwise the liquid
 /// drifts at a low idle rate. Hidden windows and Reduce Motion pause the timeline entirely.
@@ -233,84 +317,174 @@ struct LiquidCadence {
     var windowVisible: Bool
     var compact: Bool
 
+    /// Perf harness only: treat the window as key even when the app isn't active.
+    nonisolated(unsafe) static var forceKey = false
+
     var paused: Bool { reduceMotion || !windowVisible }
-    private var inactive: Bool { windowState == .inactive }
+    /// Changes when the interval policy changes (key ↔ inactive).
+    var interactiveState: Bool { !inactive }
+    private var inactive: Bool { windowState == .inactive && !Self.forceKey }
     /// While a fill/slosh settles.
-    var fastInterval: Double { inactive ? 1.0 / 15 : (compact ? 1.0 / 30 : 1.0 / 40) }
+    var fastInterval: Double { inactive ? 1.0 / 15 : 1.0 / 30 }
     /// While a live session shows bubbles.
-    var liveInterval: Double { inactive ? 1.0 / 8 : 1.0 / 24 }
+    var liveInterval: Double { inactive ? 1.0 / 8 : 1.0 / 12 }
     /// Gentle idle drift.
     var idleInterval: Double { inactive ? 1.0 / 4 : (compact ? 1.0 / 6 : 1.0 / 10) }
 }
 
-/// A timeline whose next frame interval depends on whether the liquid is currently in motion.
-struct LiquidSchedule: TimelineSchedule {
-    let motion: LiquidMotion
-    let cadence: LiquidCadence
-    let live: Bool
-
-    func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
-        Entries(date: startDate, schedule: self, lowFrequency: mode == .lowFrequency)
-    }
-
-    struct Entries: Sequence, IteratorProtocol {
-        var date: Date
-        let schedule: LiquidSchedule
-        let lowFrequency: Bool
-        var first = true
-
-        mutating func next() -> Date? {
-            if first { first = false; return date }
-            let t = date.timeIntervalSinceReferenceDate
-            let c = schedule.cadence
-            let step: Double
-            if lowFrequency {
-                step = 1
-            } else if schedule.motion.isSettling(t: Date().timeIntervalSinceReferenceDate) {
-                step = c.fastInterval
-            } else if schedule.live {
-                step = c.liveInterval
-            } else {
-                step = c.idleInterval
-            }
-            date = Date(timeIntervalSinceReferenceDate: Swift.max(t + step, Date().timeIntervalSinceReferenceDate))
-            return date
-        }
-    }
+/// Liquid animation is driven by a structured `.task(id:)` loop per layer (see `LiquidLayer`): it sleeps for
+/// an interval chosen every frame from the current state — settling → fast, live session → live rate,
+/// otherwise idle drift (year tiles and long-untouched calendars hold nearly still) — and is cancelled
+/// automatically when the layer disappears or pauses. (SwiftUI's TimelineView was measured redrawing near
+/// display rate regardless of its schedule, so it isn't used.)
+/// Picks the next frame interval for a layer.
+func liquidInterval(motion: LiquidMotion, cadence: LiquidCadence, live: Bool) -> Double {
+    if motion.isSettling(t: Date().timeIntervalSinceReferenceDate) { return cadence.fastInterval }
+    // Gentle motion while the user is looking/interacting; slower once the calendar is left alone.
+    let untouched = Date().timeIntervalSinceReferenceDate - motion.lastInteraction > LiquidMotion.idleDriftDuration
+    if live { return untouched ? 0.25 : cadence.liveInterval }
+    if cadence.compact { return 0.5 } // year tiles' idle waves are sub-pixel: hold still until something moves
+    return untouched ? 1 : cadence.idleInterval
 }
 
-/// A Canvas that draws many liquid tiles in a single pass, driven by one adaptive TimelineView.
-struct LiquidLayer: View {
+/// A Canvas that draws many liquid tiles — and their labels — in a single pass, driven by one
+/// adaptive TimelineView. Each tile's labels are supplied twice (normal and "submerged" colours) as
+/// Canvas symbols; the submerged copy is clipped to the exact wave path drawn this frame, so text stays
+/// legible wherever the surface is, including during pour-in, slosh and hover growth.
+struct LiquidLayer<Labels: View>: View {
     var cells: [LiquidCell]
     var motion: LiquidMotion
     var cadence: LiquidCadence
+    var labels: (LiquidCell, _ submerged: Bool) -> Labels
     @Environment(\.colorScheme) private var scheme
+
+    init(cells: [LiquidCell], motion: LiquidMotion, cadence: LiquidCadence,
+         @ViewBuilder labels: @escaping (LiquidCell, _ submerged: Bool) -> Labels) {
+        self.cells = cells
+        self.motion = motion
+        self.cadence = cadence
+        self.labels = labels
+    }
+
+    @State private var t: Double = Date().timeIntervalSinceReferenceDate
+
+    private struct AnimationKey: Equatable {
+        var running: Bool
+        var live: Bool
+        var interactive: Bool
+    }
 
     var body: some View {
         let live = cells.contains { $0.live }
-        Group {
-            if cadence.paused {
-                // Reduce Motion or hidden window: one still frame of the same data.
-                canvas(t: 0)
-            } else {
-                TimelineView(LiquidSchedule(motion: motion, cadence: cadence, live: live)) { timeline in
-                    canvas(t: timeline.date.timeIntervalSinceReferenceDate)
+        let running = !cadence.paused && !cells.isEmpty
+        // Reduce Motion or a hidden window: one still frame of the same data, no loop.
+        canvas(t: running ? t : 0)
+            .task(id: AnimationKey(running: running, live: live, interactive: cadence.interactiveState)) {
+                guard running else { return }
+                let motion = motion, cadence = cadence
+                while !Task.isCancelled {
+                    let interval = liquidInterval(motion: motion, cadence: cadence, live: live)
+                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                    if Task.isCancelled { break }
+                    t = Date().timeIntervalSinceReferenceDate
                 }
             }
-        }
-        .accessibilityHidden(true)
+            .accessibilityHidden(true)
     }
 
     private func canvas(t: Double) -> some View {
-        Canvas(rendersAsynchronously: false) { context, _ in
-            for cell in cells {
-                let fraction = motion.fraction(for: cell.key, target: cell.targetFraction, t: t, animated: !cadence.paused)
+        LiquidCanvas(cells: cells, motion: motion, paused: cadence.paused, reduceMotion: cadence.reduceMotion,
+                     t: t, labels: labels)
+    }
+}
+
+/// Perf harness counters (frames actually drawn).
+enum LiquidStats {
+    nonisolated(unsafe) static var framesDrawn = 0
+    nonisolated(unsafe) static var tilesDrawn = 0
+
+}
+
+/// One frame of liquid tiles + labels at time `t` (shared by `LiquidLayer` and the benchmark).
+struct LiquidCanvas<Labels: View>: View {
+    var cells: [LiquidCell]
+    var motion: LiquidMotion
+    var paused: Bool
+    var reduceMotion: Bool
+    var t: Double
+    var labels: (LiquidCell, _ submerged: Bool) -> Labels
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        if let first = cells.first, first.compact {
+            // Year tiles: batched drawing, no per-tile label symbols.
+            Canvas(rendersAsynchronously: false) { context, _ in
+                LiquidStats.framesDrawn += 1
+                LiquidStats.tilesDrawn += cells.count
                 var ctx = context
-                LiquidPainter.draw(&ctx, cell: cell, fraction: fraction,
-                                   energy: cadence.paused ? 0 : motion.energy(for: cell.key, t: t), time: t,
-                                   motion: !cadence.reduceMotion, scheme: scheme)
+                CompactLiquidPainter.draw(&ctx, cells: cells, motion: motion, t: t, animatedWaves: !reduceMotion && !paused,
+                                          scheme: scheme)
+            }
+        } else {
+            labelledCanvas
+        }
+    }
+
+    private var labelledCanvas: some View {
+        Canvas(rendersAsynchronously: false) { context, _ in
+            LiquidStats.framesDrawn += 1
+            LiquidStats.tilesDrawn += cells.count
+            if let first = cells.first, first.compact {
+                var ctx = context
+                CompactLiquidPainter.draw(&ctx, cells: cells, motion: motion, t: t, animatedWaves: !reduceMotion && !paused,
+                                          scheme: scheme)
+                return
+            }
+            for (i, cell) in cells.enumerated() {
+                let fraction = motion.fraction(for: cell.key, target: cell.targetFraction, t: t, animated: !paused)
+                var ctx = context
+                let body = LiquidPainter.draw(&ctx, cell: cell, fraction: fraction,
+                                              energy: paused ? 0 : motion.energy(for: cell.key, t: t), time: t,
+                                              motion: !reduceMotion, scheme: scheme)
+                var labelContext = context
+                if cell.dimmed { labelContext.opacity = 0.6 }
+                let split = body != nil && !cell.dimmed
+                if let normal = labelContext.resolveSymbol(id: SymbolID(index: i, submerged: false)) {
+                    var above = labelContext
+                    // Normal colours only above the surface…
+                    if split, let body { above.clip(to: body, options: .inverse) }
+                    above.draw(normal, in: cell.rect)
+                }
+                if split, let body, let submerged = labelContext.resolveSymbol(id: SymbolID(index: i, submerged: true)) {
+                    // …and high-contrast colours below it, following this frame's exact wave.
+                    var below = labelContext
+                    below.clip(to: body)
+                    below.draw(submerged, in: cell.rect)
+                }
+            }
+        } symbols: {
+            ForEach(Array(cells.enumerated()), id: \.offset) { i, cell in
+                labels(cell, false)
+                    .frame(width: cell.rect.width, height: cell.rect.height)
+                    .tag(SymbolID(index: i, submerged: false))
+                if !cell.dimmed {
+                    labels(cell, true)
+                        .frame(width: cell.rect.width, height: cell.rect.height)
+                        .tag(SymbolID(index: i, submerged: true))
+                }
             }
         }
+    }
+
+    private struct SymbolID: Hashable {
+        var index: Int
+        var submerged: Bool
+    }
+}
+
+extension LiquidLayer where Labels == EmptyView {
+    init(cells: [LiquidCell], motion: LiquidMotion, cadence: LiquidCadence) {
+        self.init(cells: cells, motion: motion, cadence: cadence) { _, _ in EmptyView() }
     }
 }
 
@@ -325,3 +499,4 @@ extension EnvironmentValues {
         set { self[ForceReducedMotionKey.self] = newValue }
     }
 }
+

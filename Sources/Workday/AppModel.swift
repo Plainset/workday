@@ -24,6 +24,8 @@ final class AppModel {
     var backupStatus: BackupStatus = .unknown
     /// Whether the calendar window is currently on screen (drives animation pausing).
     var calendarVisible = false
+    /// Whether the menu bar popover is open (its liquid glass pauses when closed).
+    var popoverVisible = false
     /// Set when the user explicitly opens a day from somewhere else (e.g. the menu).
     var requestedDay: DayKey?
 
@@ -66,9 +68,11 @@ final class AppModel {
         AppDelegate.shared?.timerStateChanged()
     }
 
+    /// Advances the display clocks. `now` changes every second only while the popover (which shows
+    /// seconds) is open; otherwise both clocks change once a minute, so idle views don't re-render.
     func tick(_ date: Date = Date()) {
-        now = date
         let minute = Self.minuteFloor(date)
+        if popoverVisible || minute != displayNow { now = date }
         if minute != displayNow { displayNow = minute }
     }
 

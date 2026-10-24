@@ -10,6 +10,11 @@ if let index = CommandLine.arguments.firstIndex(of: "--snapshot") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--benchmark") {
+    MainActor.assumeIsolated { SnapshotRenderer.benchmark() }
+    exit(0)
+}
+
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = AppDelegate()

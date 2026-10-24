@@ -66,6 +66,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         startTimers()
         timerStateChanged()
 
+        if CommandLine.arguments.contains("--perf") && WorkdayPaths.usesCustomDataDirectory {
+            SnapshotRenderer.perf(model: model)
+            return
+        }
         model.launchAtLogin.refresh()
         firstLaunchSetup()
         Task {
@@ -207,7 +211,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // MARK: Termination
 
+    /// True when macOS is quitting us for a logout, restart or shutdown (kAEQuitReason on the quit event).
+    private var isSystemQuit: Bool {
+        func fourCC(_ s: String) -> UInt32 { s.utf8.reduce(0) { $0 << 8 | UInt32($1) } }
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              let reason = event.attributeDescriptor(forKeyword: fourCC("why?"))?.enumCodeValue else { return false }
+        return ["logo", "rlgo", "rrst", "rsdn", "rest", "shut"].map(fourCC).contains(reason)
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isSystemQuit {
+            poweringOff = true
+            model?.ledger.checkpoint(kind: .shutdown)
+        }
         guard let model, model.isRunning, !poweringOff else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = "The timer is running"
@@ -217,6 +233,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             model.stop()
+            if model.isRunning {
+                // The stop failed (e.g. the clock moved backwards): stay open so the user sees why.
+                let failure = NSAlert()
+                failure.messageText = "The timer couldn't be stopped"
+                failure.informativeText = model.errorMessage ?? "Please try again."
+                failure.runModal()
+                return .terminateCancel
+            }
             return .terminateNow
         }
         return .terminateCancel

@@ -18,7 +18,6 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: MenuPopoverView().environment(model))
         if let button = item.button {
             button.target = self
             button.action = #selector(togglePopover(_:))
@@ -32,7 +31,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         if popover.isShown {
             popover.performClose(sender)
         } else if let button = item.button {
+            model.popoverVisible = true
             model.tick()
+            // Content exists only while shown, so a closed popover costs nothing.
+            popover.contentViewController = NSHostingController(rootView: MenuPopoverView().environment(model))
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
@@ -103,5 +105,13 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         return image
     }
 
-    func popoverDidShow(_ notification: Notification) { model.tick() }
+    func popoverDidShow(_ notification: Notification) {
+        model.tick()
+        model.popoverVisible = true
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        model.popoverVisible = false
+        popover.contentViewController = nil
+    }
 }

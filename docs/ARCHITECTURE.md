@@ -110,17 +110,26 @@ Restore is disabled while the timer runs.
   Live days get rising bubbles; > 18 h days stay full and add an outer glow, bright rim, foam along the brim,
   sparkles and an icon — the exact hours stay printed.
 * Motion: fill changes animate with a damped settle and trigger a slosh impulse; hovering a tile sloshes it.
-* Cadence (`LiquidSchedule`): the timeline asks for its next frame lazily and picks the interval from the
-  current state — 40 fps (30 fps year view) only while a fill transition or slosh is settling, 24 fps while a live
-  session shows bubbles, a 10 fps (6 fps year) idle drift otherwise; when the window is not key these drop to
-  15 / 8 / 4 fps; hidden, occluded or minimised windows and **Reduce Motion** render a single still frame instead of
-  a timeline. The year view draws all 365 tiles with one Canvas and one timeline. Calendar and editor views read a
-  minute-resolution clock (`AppModel.displayNow`), so they re-render at most once a minute; only the popover ticks
-  every second.
+* Cadence: each liquid layer runs a structured `.task(id:)` loop that sleeps for an interval chosen every frame
+  (`liquidInterval`): 30 fps only while a fill transition or slosh is settling; 12 fps for the live tile's bubbles;
+  a 10 fps idle drift for 30 s after the last pointer/keyboard interaction, then 1 fps (live bubbles 4 fps);
+  year tiles hold still (0.5 s) unless something moves. Non-key windows use slower rates; hidden/occluded/
+  minimised windows and **Reduce Motion** draw one still frame and run no loop. The loop is cancelled when the
+  layer disappears. (SwiftUI's `TimelineView` was measured redrawing near display rate regardless of its
+  schedule, so it is not used.)
+* The month view draws the running day's tile in its own small layer, so bubbles don't redraw the other 41 tiles.
+  Tiny fill changes (the live minute ticking over) apply quietly without a slosh.
+* The year view draws all 365 tiles with one batched Canvas (`CompactLiquidPainter`: a handful of draw calls),
+  day numbers in one static Canvas per month, and one hover/click surface per month with per-day
+  accessibility children — so animation frames don't re-walk hundreds of views. Its grid picks 6×2 / 4×3 / 3×4 /
+  2×6 to maximise tile size and scrolls (never truncating day numbers) when tiles would be smaller than 14 pt.
+* Month tile labels are drawn inside the liquid Canvas as symbols: normal colours clipped to above the exact wave
+  path of the current frame, dark-on-orange clipped to below it — legible through pour-in, slosh and hover growth.
+* The popover's SwiftUI content exists only while it is open; the display clock ticks every second only while the
+  popover is visible, otherwise once a minute.
+* Measured CPU (`scripts/perf.sh`, one process per scenario, % of one core, Apple Silicon): see
+  `evidence/latest/perf.txt`.
 * Reduce Motion also replaces slide/spring navigation with short cross-fades and disables hover growth and slosh.
-* Labels are drawn twice and masked at the waterline (`WaterlineSplit`): normal colours above the surface, dark
-  brown (`Theme.onLiquid`) below it, so day numbers and durations stay legible wherever the surface crosses them,
-  at any tile size, in light and dark.
 * Text sizes are fixed points tuned for the tile grid with `minimumScaleFactor` fallbacks; macOS has no system-wide
   Dynamic Type for AppKit apps, so large-text support relies on window resizing (tiles grow with the window) and the
   system's display scaling. Settings/editor forms use standard controls that follow system font settings.

@@ -32,7 +32,7 @@ struct MenuPopoverView: View {
 
             // Big total + live session.
             HStack(alignment: .center, spacing: 14) {
-                MiniGlass(seconds: total, live: running)
+                MiniGlass(seconds: total, live: running, visible: model.popoverVisible || AppDelegate.shared == nil)
                     .frame(width: 46, height: 58)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(running ? DurationFormat.precise(total) : DurationFormat.short(total))
@@ -176,6 +176,8 @@ struct RecoveryNotice: View {
 struct MiniGlass: View {
     var seconds: TimeInterval
     var live: Bool
+    /// The hosting window/popover is on screen; otherwise a single still frame is drawn.
+    var visible: Bool
     @State private var motion = LiquidMotion()
     @Environment(\.controlActiveState) private var activeState
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -188,7 +190,7 @@ struct MiniGlass: View {
                                            rect: CGRect(origin: .zero, size: geo.size).insetBy(dx: 2, dy: 2),
                                            cornerRadius: 10, seconds: seconds, dimmed: false, live: live)],
                         motion: motion,
-                        cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState, windowVisible: true, compact: false))
+                        cadence: LiquidCadence(reduceMotion: reduceMotion, windowState: activeState, windowVisible: visible, compact: false))
         }
         .accessibilityHidden(true)
     }
