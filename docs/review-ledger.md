@@ -157,3 +157,19 @@ earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
 | A1 | low | Lock file created 0644 | fixed `1e4f36b` |
 | A2 | low | Backups made by v1 not tightened on upgrade | fixed `1e4f36b` |
 | A3 | info | `OwnerOnly` chmods an existing `WORKDAY_DATA_DIR` | fixed `1e4f36b` (documented in CONTRIBUTING) |
+
+## Phase 1 — cycle 2 — revision `0b91b2c`
+
+| Reviewer | Verdict | Summary |
+|---|---|---|
+| A functional (52/52 tests; upgrade from c2990f9 bit-identical incl. settings; v1 backups/lock tightened; hand-off token observed live) | APPROVED | 1 low (A4) |
+| B security & privacy (gitleaks on fresh clone, 33 commits noreply-only, workflows re-checked) | APPROVED | info only |
+| C architecture (52/52 tests; C1–C8 verified) | APPROVED | 2 low |
+| D release readiness (fresh-clone README path, REQUIRE_UNIVERSAL package, DMG inspection: id/version/build 33/universal; CI runs green) | APPROVED | 1 low (doc) |
+
+| ID | Sev | Finding | Resolution |
+|---|---|---|---|
+| A4 / C-N2 / D-N1 | low | After the bundle-ID change, existing pre-release installs don't re-register launch at login (flag already set); notification permission/window frames reset | cycle 3: one-time login-item migration keyed on recorded bundle id + upgrade note |
+| C-N1 | low | Test temp cleanup can delete a live parallel run's folder | cycle 3: skip folders of live PIDs and anything newer than 1 h |
+| C-N3 | info | Reopen test uses a second connection, not a closed old-build file | accepted: A's live upgrade test from c2990f9 covers the old-build file; add a binary fixture before the first schema change (noted in `WorkStore.migrate` doc) |
+| B-info | info | Hash token isn't secret; bundle-id upgrade note | token accepted (only opens the calendar); note added in cycle 3 |

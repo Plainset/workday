@@ -98,9 +98,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func firstLaunchSetup() {
         let settings = model.ledger.settings
         // Test/demo instances (custom data dir) never register a login item.
-        if !settings.launchAtLoginInitialized && model.launchAtLogin.isBundled && !WorkdayPaths.usesCustomDataDirectory {
-            model.launchAtLogin.setEnabled(true)
-            model.perform { try model.ledger.updateSettings { $0.launchAtLoginInitialized = true } }
+        if model.launchAtLogin.isBundled && !WorkdayPaths.usesCustomDataDirectory {
+            let store = model.ledger.store
+            if !settings.launchAtLoginInitialized {
+                model.setLaunchAtLogin(true)
+                model.perform { try model.ledger.updateSettings { $0.launchAtLoginInitialized = true } }
+            } else if store.meta("login_item_bundle_id") != Bundle.main.bundleIdentifier,
+                      store.meta("login_item_enabled") != "0" {
+                // The login item was set up by a build with a different bundle identifier (pre-1.0 builds used
+                // `local.workday.tracker`): carry the user's choice over once.
+                model.setLaunchAtLogin(true)
+            }
         }
         if !settings.hasCompletedFirstLaunch {
             model.perform { try model.ledger.updateSettings { $0.hasCompletedFirstLaunch = true } }

@@ -152,6 +152,16 @@ final class AppModel {
         }
     }
 
+    // MARK: Launch at login
+
+    /// Changes the login item and records the choice (with the bundle id it was made for) so it can be carried
+    /// over if the app's identity ever changes.
+    func setLaunchAtLogin(_ enabled: Bool) {
+        launchAtLogin.setEnabled(enabled)
+        try? ledger.store.setMeta("login_item_enabled", enabled ? "1" : "0")
+        try? ledger.store.setMeta("login_item_bundle_id", Bundle.main.bundleIdentifier ?? "")
+    }
+
     // MARK: Notifications
 
     /// Posts any due notifications exactly once per local day.

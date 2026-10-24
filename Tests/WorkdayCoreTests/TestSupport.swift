@@ -25,7 +25,12 @@ private let testRoot: URL = {
     let fm = FileManager.default
     let base = fm.temporaryDirectory
     for stale in (try? fm.contentsOfDirectory(atPath: base.path)) ?? [] where stale.hasPrefix("workday-tests-") {
-        try? fm.removeItem(at: base.appendingPathComponent(stale))
+        // Never touch a folder that belongs to a test run still in progress (parallel runs share TMPDIR).
+        if let pid = Int32(stale.dropFirst("workday-tests-".count)), kill(pid, 0) == 0 || errno == EPERM { continue }
+        let url = base.appendingPathComponent(stale)
+        let modified = (try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
+        guard Date().timeIntervalSince(modified) > 3600 else { continue }
+        try? fm.removeItem(at: url)
     }
     let root = base.appendingPathComponent("workday-tests-\(ProcessInfo.processInfo.processIdentifier)")
     try? fm.createDirectory(at: root, withIntermediateDirectories: true)

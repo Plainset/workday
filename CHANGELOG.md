@@ -23,4 +23,9 @@ First public release. Fully offline.
 - Data folder, database, backups and lock file created owner-only (0700/0600); files from earlier builds are
   tightened on launch.
 
+### Upgrading from a pre-release build
+- The bundle identifier is now `io.github.plainset.workday`. Your work data is untouched. Launch at login is
+  carried over automatically on first launch (remove any stale "Workday" entry in System Settings → General →
+  Login Items); macOS asks for notification permission again and window positions reset once.
+
 [1.0.0]: https://github.com/Plainset/workday/releases/tag/v1.0.0

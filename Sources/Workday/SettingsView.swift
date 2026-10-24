@@ -69,7 +69,7 @@ private struct LaunchAtLoginRow: View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle("Open Workday at login", isOn: Binding(
                 get: { login.state == .enabled || login.state == .requiresApproval },
-                set: { login.setEnabled($0) }))
+                set: { model.setLaunchAtLogin($0) }))
             .disabled({ if case .unavailable = login.state { return true } else { return false } }())
             switch login.state {
             case .requiresApproval:
