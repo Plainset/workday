@@ -55,6 +55,15 @@ public final class BackupManager {
         return f
     }()
 
+    /// Owner-only permissions for the backups folder and every existing backup (upgrades from versions that
+    /// created them with default permissions).
+    public func tightenPermissions() {
+        guard fileManager.fileExists(atPath: directory.path) else { return }
+        try? OwnerOnly.createDirectory(at: directory)
+        let urls = (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        for url in urls { OwnerOnly.restrict(file: url.path) }
+    }
+
     // MARK: Listing
 
     /// All backups, newest first, each validated.
@@ -250,7 +259,8 @@ public final class SingleInstanceLock {
 
     public init?(url: URL) {
         try? OwnerOnly.createDirectory(at: url.deletingLastPathComponent())
-        fd = open(url.path, O_CREAT | O_RDWR, 0o644)
+        fd = open(url.path, O_CREAT | O_RDWR, 0o600)
+        OwnerOnly.restrict(file: url.path)
         guard fd >= 0 else { return nil }
         if flock(fd, LOCK_EX | LOCK_NB) != 0 {
             close(fd)

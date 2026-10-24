@@ -30,10 +30,10 @@ fi
 
 echo "==> Disk image"
 STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
 cp -R dist/Workday.app "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "Workday $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$OUT/$NAME.dmg" >/dev/null
-rm -rf "$STAGE"
 if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
   codesign --force --sign "$DEVELOPER_ID_APPLICATION" --timestamp "$OUT/$NAME.dmg"
   if [[ -n "${NOTARY_PROFILE:-}" ]]; then

@@ -20,7 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var napActivity: NSObjectProtocol?
     private var poweringOff = false
 
-    static let showCalendarNotification = Notification.Name("local.workday.tracker.showCalendar")
+    static let showCalendarNotification = Notification.Name("io.github.plainset.workday.showCalendar")
+
+    /// Identifies the data directory in the "show calendar" hand-off without broadcasting its path
+    /// (which contains the account name) to other processes.
+    static var instanceToken: String {
+        WorkdayPaths.dataDirectory.path.utf8.reduce(UInt64(1469598103934665603)) { ($0 ^ UInt64($1)) &* 1099511628211 }
+            .description
+    }
 
     /// Checkpoint cadence while running; bounds the uncertainty of a crash.
     static let heartbeatInterval: TimeInterval = 30
@@ -34,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard let lock = SingleInstanceLock(url: WorkdayPaths.lockURL) else {
             // Another Workday is already running on this data: hand over and exit.
             // Ask the running instance to show its calendar so the user sees a response.
-            DistributedNotificationCenter.default().postNotificationName(Self.showCalendarNotification, object: WorkdayPaths.dataDirectory.path,
+            DistributedNotificationCenter.default().postNotificationName(Self.showCalendarNotification, object: Self.instanceToken,
                                                                         userInfo: nil, deliverImmediately: true)
             NSApp.terminate(nil)
             return
@@ -59,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
 
         let backups = BackupManager(store: store, directory: WorkdayPaths.backupsDirectory)
+        backups.tightenPermissions()
         model = AppModel(ledger: ledger, backups: backups, notifications: NotificationService(), launchAtLogin: LaunchAtLogin())
         statusItem = StatusItemController(model: model)
         buildMainMenu()
@@ -195,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
         }
         DistributedNotificationCenter.default().addObserver(forName: Self.showCalendarNotification,
-                                                            object: WorkdayPaths.dataDirectory.path, queue: .main) { [weak self] _ in
+                                                            object: Self.instanceToken, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.showCalendar() }
         }
         let nc = NotificationCenter.default

@@ -23,9 +23,18 @@ public final class WorkStore {
     }
 
     /// Creates/upgrades the schema. Refuses to open data from a newer schema.
+    ///
+    /// Migrations are incremental and idempotent: each `if version < N { … setMeta("schema_version", "N") }`
+    /// block runs inside one transaction and never drops or rewrites existing user data. To change the schema,
+    /// bump `schemaVersion`, append a new block below the last one, and add a test that opens a database written
+    /// by the previous version (see `ReleaseHardeningTests.v1DatabaseReopens`).
     public func migrate() throws {
         try db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        let version = Int(meta("schema_version") ?? "0") ?? 0
+        // Read the version strictly: an unreadable database must fail, never be treated as empty (which could
+        // re-run migrations and downgrade a newer schema's marker).
+        var stored: String?
+        try db.query("SELECT value FROM meta WHERE key = 'schema_version'") { stored = $0.text(0) }
+        let version = Int(stored ?? "0") ?? 0
         if version > Self.schemaVersion { throw StoreError.newerSchema(version) }
         if version < 1 {
             try db.transaction {

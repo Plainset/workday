@@ -22,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0   # build number = commit count
           persist-credentials: false
       - name: Toolchain
         run: |
@@ -33,6 +34,8 @@ jobs:
       - name: Unit tests
         run: ./scripts/test.sh
       - name: Release build and packaging
+        env:
+          REQUIRE_UNIVERSAL: "1"
         run: ./scripts/package_release.sh
       - name: Validate app bundle
         run: |

@@ -16,13 +16,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0   # build number = commit count
           persist-credentials: false
       - name: Tag matches VERSION
         run: test "${GITHUB_REF_NAME}" = "v$(cat VERSION)"
       - name: Tests
         run: ./scripts/test.sh
       - name: Package (ad-hoc signed; see docs/RELEASING.md for notarised builds)
+        env:
+          REQUIRE_UNIVERSAL: "1"
         run: ./scripts/package_release.sh
+      - name: Validate release build
+        run: |
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/Workday.app/Contents/Info.plist)" = "$(cat VERSION)"
+          lipo dist/Workday.app/Contents/MacOS/Workday -verify_arch arm64 x86_64
+          codesign --verify --strict --verbose=2 dist/Workday.app
+          (cd dist/release && shasum -a 256 -c SHA256SUMS.txt)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-artifacts
@@ -36,6 +45,11 @@ jobs:
     permissions:
       contents: write   # only this job may create the (draft) release
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/release-notes.md
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-artifacts
@@ -47,4 +61,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" release/* \
             --repo "${GITHUB_REPOSITORY}" --draft --verify-tag \
             --title "Workday ${GITHUB_REF_NAME}" \
-            --notes "See CHANGELOG.md. Builds are ad-hoc signed and not notarised: right-click → Open on first launch. Verify downloads with SHA256SUMS.txt."
+            --notes-file .github/release-notes.md

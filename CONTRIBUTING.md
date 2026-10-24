@@ -19,7 +19,8 @@ Requirements: macOS 14+, Swift 6 (Xcode 16+ or the Command Line Tools).
 WORKDAY_DATA_DIR=/tmp/workday-dev dist/Workday.app/Contents/MacOS/Workday --seed-demo --show-calendar
 ```
 
-Use `WORKDAY_DATA_DIR` while developing so you never touch your real work history. Never commit databases,
+Use `WORKDAY_DATA_DIR` while developing so you never touch your real work history. Point it at a dedicated empty
+folder: Workday makes its data folder owner-only (0700), including an existing one. Never commit databases,
 backups (`*.sqlite`, `Backups/`) or anything containing personal data — `.gitignore` blocks the common cases.
 
 `Workday --snapshot <dir>` renders screenshots of the main views from demo data, which is handy for reviewing UI

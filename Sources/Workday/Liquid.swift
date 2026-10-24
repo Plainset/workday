@@ -369,12 +369,6 @@ struct LiquidCanvas<Labels: View>: View {
         Canvas(rendersAsynchronously: false) { context, _ in
             LiquidStats.framesDrawn += 1
             LiquidStats.tilesDrawn += cells.count
-            if let first = cells.first, first.compact {
-                var ctx = context
-                CompactLiquidPainter.draw(&ctx, cells: cells, motion: motion, t: t, animatedWaves: !reduceMotion && !paused,
-                                          scheme: scheme)
-                return
-            }
             for (i, cell) in cells.enumerated() {
                 let fraction = motion.fraction(for: cell.key, target: cell.targetFraction, t: t, animated: !paused)
                 var ctx = context

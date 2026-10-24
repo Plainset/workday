@@ -20,8 +20,20 @@ func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 0, _ min: Int = 0, _ s: Int =
     cal.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min, second: s))!
 }
 
+/// Per-run temp root; folders left by earlier runs are removed on first use.
+private let testRoot: URL = {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory
+    for stale in (try? fm.contentsOfDirectory(atPath: base.path)) ?? [] where stale.hasPrefix("workday-tests-") {
+        try? fm.removeItem(at: base.appendingPathComponent(stale))
+    }
+    let root = base.appendingPathComponent("workday-tests-\(ProcessInfo.processInfo.processIdentifier)")
+    try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
+}()
+
 func tempDir() -> URL {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("workday-tests-\(UUID().uuidString)")
+    let url = testRoot.appendingPathComponent(UUID().uuidString)
     try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }

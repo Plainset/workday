@@ -20,4 +20,7 @@ First public release. Fully offline.
 - Release packaging (ZIP + DMG + checksums) with optional Developer ID signing and notarisation.
 
 ### Security
-- Data folder and database created owner-only (0700/0600).
+- Data folder, database, backups and lock file created owner-only (0700/0600); files from earlier builds are
+  tightened on launch.
+
+[1.0.0]: https://github.com/Plainset/workday/releases/tag/v1.0.0

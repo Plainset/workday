@@ -6,9 +6,15 @@ cd "$(dirname "$0")/.."
 DEST=/Applications
 [[ -w "$DEST" ]] || { DEST="$HOME/Applications"; mkdir -p "$DEST"; }
 if pgrep -x Workday >/dev/null; then
-  echo "Quitting running Workday…"
-  osascript -e 'tell application id "local.workday.tracker" to quit' || true
-  sleep 2
+  echo "Quitting running Workday… (if the timer is running you'll be asked to stop it)"
+  for id in io.github.plainset.workday local.workday.tracker; do
+    osascript -e "tell application id \"$id\" to quit" >/dev/null 2>&1 || true
+  done
+  for _ in $(seq 1 60); do pgrep -x Workday >/dev/null || break; sleep 1; done
+  if pgrep -x Workday >/dev/null; then
+    echo "Workday is still running (quit was cancelled?). Quit it, then run this script again." >&2
+    exit 1
+  fi
 fi
 rm -rf "$DEST/Workday.app"
 cp -R dist/Workday.app "$DEST/"

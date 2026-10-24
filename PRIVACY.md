@@ -11,7 +11,7 @@ All data lives in your user account on your Mac:
 |---|---|
 | Work sessions (start/end instants, time zone), settings, daily goal, notification bookkeeping, an audit log of Start/Stop/edit actions | `~/Library/Application Support/Workday/workday.sqlite` (+ `-wal`/`-shm`) |
 | Automatic, manual and pre-restore backups of that database | `~/Library/Application Support/Workday/Backups/` |
-| Window positions | macOS user defaults for `local.workday.tracker` |
+| Window positions | macOS user defaults for `io.github.plainset.workday` |
 | Login-item registration and notification permission | managed by macOS |
 
 The data folder and files are created readable only by your user account (0700 / 0600).

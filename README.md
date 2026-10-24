@@ -43,9 +43,14 @@ Download `Workday-<version>-macOS.dmg` (or `.zip`) from
 
 Requirements: **macOS 14 Sonoma or later**, Apple Silicon or Intel.
 
-> Release builds are currently **ad-hoc signed and not notarised**. The first time, right-click Workday in
-> Applications and choose **Open**, then confirm. (See [docs/RELEASING.md](docs/RELEASING.md) for how
-> notarised builds are produced once a Developer ID is configured.)
+> Release builds are currently **ad-hoc signed and not notarised**, so macOS asks you to confirm the first launch:
+>
+> * **macOS 15 Sequoia and later:** open Workday once and dismiss the warning, then go to **System Settings →
+>   Privacy & Security**, find *"Workday" was blocked…* and click **Open Anyway**.
+> * **macOS 14 Sonoma:** right-click Workday in Applications → **Open** → **Open**.
+>
+> Verify the download with `shasum -a 256 -c SHA256SUMS.txt`. See [docs/RELEASING.md](docs/RELEASING.md) for how
+> notarised builds are produced once a Developer ID is configured.
 
 On first launch Workday opens its calendar once and registers itself to start at login (you can turn that off in
 Settings → General). After that it starts quietly in the menu bar. Updating replaces only the app — your data in

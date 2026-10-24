@@ -245,4 +245,46 @@ struct ReleaseHardeningTests {
         #expect(try perms(dir.appendingPathComponent("Backups").path) == 0o700)
         #expect(try perms(b.url.path) == 0o600)
     }
+
+    @Test("A v1 database reopens with all sessions and settings intact (upgrade path)")
+    func v1DatabaseReopens() throws {
+        let (ledger, _, dir) = try makeLedger(at: date(2026, 10, 23, 18, 0))
+        try ledger.addSession(start: date(2026, 10, 20, 9), end: date(2026, 10, 20, 17))
+        try ledger.addSession(start: date(2026, 10, 21, 23, 30), end: date(2026, 10, 22, 1, 15))
+        try ledger.updateSettings { $0.dailyGoalMinutes = 7 * 60 + 30 }
+        let before = ledger.sessions
+        let path = dir.appendingPathComponent("workday.sqlite").path
+        let reopened = try WorkStore(path: path)
+        #expect(reopened.meta("schema_version") == String(WorkStore.schemaVersion))
+        #expect(try reopened.loadSessions() == before)
+        #expect(reopened.loadSettings().dailyGoalMinutes == 7 * 60 + 30)
+    }
+
+    @Test("A database from a newer schema is refused, not downgraded")
+    func newerSchemaRefused() throws {
+        let path = tempDir().appendingPathComponent("w.sqlite").path
+        let store = try WorkStore(path: path)
+        try store.setMeta("schema_version", String(WorkStore.schemaVersion + 1))
+        #expect(throws: StoreError.newerSchema(WorkStore.schemaVersion + 1)) { _ = try WorkStore(path: path) }
+        #expect(store.meta("schema_version") == String(WorkStore.schemaVersion + 1))
+    }
+
+    @Test("Backups and lock created by an older version are tightened to owner-only")
+    func upgradeTightensExistingFiles() throws {
+        let dir = tempDir()
+        let backupsDir = dir.appendingPathComponent("Backups")
+        try FileManager.default.createDirectory(at: backupsDir, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o755])
+        let old = backupsDir.appendingPathComponent("workday-auto-20261001T000000Z.sqlite")
+        FileManager.default.createFile(atPath: old.path, contents: Data(), attributes: [.posixPermissions: 0o644])
+        let store = try WorkStore(path: dir.appendingPathComponent("w.sqlite").path)
+        BackupManager(store: store, directory: backupsDir).tightenPermissions()
+        let perms = { (path: String) in (try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber)?.intValue ?? -1 }
+        #expect(try perms(backupsDir.path) == 0o700)
+        #expect(try perms(old.path) == 0o600)
+        let lockURL = dir.appendingPathComponent(".lock")
+        let lock = SingleInstanceLock(url: lockURL)
+        #expect(lock != nil)
+        #expect(try perms(lockURL.path) == 0o600)
+    }
 }

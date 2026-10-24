@@ -37,3 +37,8 @@ supabase/.branches/
 .idea/
 .vscode/
 xcuserdata/
+
+# Defence in depth
+*.p8
+*.sqlite3
+*.partial

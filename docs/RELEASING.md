@@ -3,7 +3,8 @@
 ## Versioning
 
 `VERSION` holds the version (Semantic Versioning). `scripts/build_app.sh` writes it into `Info.plist`
-(`CFBundleShortVersionString`); `CFBundleVersion` is the commit count. The release tag must be `v<VERSION>`.
+(`CFBundleShortVersionString`); `CFBundleVersion` is the commit count (CI checks out full history so it matches
+local builds). The release tag must be `v<VERSION>`. Bundle identifier: `io.github.plainset.workday`.
 
 Minimum macOS: **14.0 Sonoma** (`LSMinimumSystemVersion`, `Package.swift` platforms). Universal binary
 (arm64 + x86_64).
@@ -44,11 +45,24 @@ say so in the release notes.
 > Status for v1.0.0: no Developer ID identity was available on the build machine, so v1.0.0 artefacts are ad-hoc
 > signed and not notarised. The steps above are the remaining owner action to ship notarised builds.
 
+## Going public (owner checklist)
+
+1. Make the repository public (owner authorisation required).
+2. Settings → Code security: enable **Private vulnerability reporting** (SECURITY.md relies on it),
+   **Dependabot alerts**, and **Secret scanning push protection**.
+3. Settings → Branches: protect `main` — require the CI checks *Build, test and validate release build* and
+   *Secret scan (full history)*; disallow force pushes.
+4. Settings → Actions → General: require approval for workflows from first-time outside contributors.
+5. Only ever push `main` and release tags from the local clone — never `git push --all`/`--mirror` (a local
+   `backup/pre-public-rewrite` branch holds the pre-publication history and must stay private; it can be moved to
+   an off-repo `git bundle` and deleted).
+
 ## Release via GitHub
 
 1. Update `VERSION` and `CHANGELOG.md`, commit, make sure CI is green.
 2. Tag and push: `git tag -a v1.0.0 -m "Workday 1.0.0" && git push origin v1.0.0`.
-3. The **Release** workflow tests, packages and creates a **draft** release with the artefacts and checksums.
+3. The **Release** workflow tests, packages (universal binary required), validates and creates a **draft**
+   release with the artefacts, checksums and the notes in `.github/release-notes.md`.
 4. Review the draft (optionally replace the artefacts with locally notarised ones) and publish it manually.
 
 ## Install / update behaviour

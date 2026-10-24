@@ -12,9 +12,13 @@ git status --short >> "$OUT/REVISION.txt"
 ./scripts/build_app.sh > "$OUT/build.log" 2>&1; echo "build exit: $?" >> "$OUT/build.log"
 dist/Workday.app/Contents/MacOS/Workday --snapshot "$OUT/snapshots" > "$OUT/snapshot.log" 2>&1
 # Never publish machine-specific paths: rewrite the checkout path and home directory in logs.
-for f in "$OUT"/*.log "$OUT/environment.txt"; do
-  sed -i '' -e "s#$(pwd)#.#g" -e "s#$HOME#~#g" "$f"
-done
+ROOT="$(pwd)" python3 - "$OUT"/*.log "$OUT/environment.txt" <<'PY'
+import os, sys
+root, home = os.environ["ROOT"], os.path.expanduser("~")
+for path in sys.argv[1:]:
+    text = open(path, encoding="utf-8", errors="replace").read()
+    open(path, "w", encoding="utf-8").write(text.replace(root, ".").replace(home, "~"))
+PY
 grep -E "Test run|✘" "$OUT/test.log" | tail -5
 tail -3 "$OUT/build.log"
 echo "Evidence for $REV in $OUT"

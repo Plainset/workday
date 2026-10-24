@@ -11,7 +11,8 @@
 Please **do not open a public issue** for security problems.
 
 Report privately through GitHub: **Security → Report a vulnerability** on this repository
-(private vulnerability reporting). Include:
+(private vulnerability reporting). If that option isn't available, open an issue titled "Security contact
+request" **without any details**, and the maintainer will reply with a private channel. Include in your report:
 
 * the affected version and macOS version,
 * steps to reproduce or a proof of concept,
