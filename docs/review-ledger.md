@@ -185,4 +185,4 @@ earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| A5 | low | Upgrade notes claim the login-item choice is honoured, but pre-1.0 builds never recorded it (re-enabled once); restoring an older backup drops the recorded choice | cycle 4: docs corrected; restore preserves `login_item_*` meta (test) |
+| A5 | low | Upgrade notes claim the login-item choice is honoured, but pre-1.0 builds never recorded it (re-enabled once); restoring an older backup drops the recorded choice | fixed `f85aa7f`: docs corrected; restore preserves `login_item_*` meta (test `restoreKeepsLoginItemChoice`) |

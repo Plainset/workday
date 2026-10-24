@@ -3,19 +3,19 @@
 Building for production...
 [0/4] Write sources
 [1/4] Write swift-version--1AB21518FC5DEDBE.txt
-[3/5] Compiling Workday AppDelegate.swift
+[3/5] Compiling WorkdayCore BackupManager.swift
 [3/5] Write Objects.LinkFileList
 [4/5] Linking Workday
-Build complete! (10.65s)
+Build complete! (3.99s)
 ==> Building x86_64 release
 [0/1] Planning build
 Building for production...
 [0/3] Write sources
 [1/3] Write swift-version--1AB21518FC5DEDBE.txt
-[3/4] Compiling Workday AppDelegate.swift
+[3/4] Compiling WorkdayCore BackupManager.swift
 [3/5] Write Objects.LinkFileList
 [4/5] Linking Workday
-Build complete! (10.80s)
+Build complete! (3.95s)
 ==> Assembling ./dist/Workday.app
 ./dist/Workday.app/Contents/Info.plist: OK
 ==> Signing (ad-hoc; set DEVELOPER_ID_APPLICATION for a Developer ID signature)
