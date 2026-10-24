@@ -169,7 +169,7 @@ earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| A4 / C-N2 / D-N1 | low | After the bundle-ID change, existing pre-release installs don't re-register launch at login (flag already set); notification permission/window frames reset | cycle 3: one-time login-item migration keyed on recorded bundle id + upgrade note |
-| C-N1 | low | Test temp cleanup can delete a live parallel run's folder | cycle 3: skip folders of live PIDs and anything newer than 1 h |
+| A4 / C-N2 / D-N1 | low | After the bundle-ID change, existing pre-release installs don't re-register launch at login (flag already set); notification permission/window frames reset | fixed `9ef63e7`: one-time login-item migration keyed on recorded bundle id + CHANGELOG/RELEASING upgrade notes |
+| C-N1 | low | Test temp cleanup can delete a live parallel run's folder | fixed `9ef63e7` |
 | C-N3 | info | Reopen test uses a second connection, not a closed old-build file | accepted: A's live upgrade test from c2990f9 covers the old-build file; add a binary fixture before the first schema change (noted in `WorkStore.migrate` doc) |
-| B-info | info | Hash token isn't secret; bundle-id upgrade note | token accepted (only opens the calendar); note added in cycle 3 |
+| B-info | info | Hash token isn't secret; bundle-id upgrade note | token accepted (only opens the calendar); upgrade note fixed `9ef63e7` |
