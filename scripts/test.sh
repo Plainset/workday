@@ -11,4 +11,4 @@ if [[ "$(xcode-select -p 2>/dev/null)" == "$CLT"* && -d "$CLT/Library/Developer/
          -Xlinker -rpath -Xlinker "$FW"
          -Xlinker -rpath -Xlinker "$CLT/Library/Developer/usr/lib")
 fi
-exec swift test "${EXTRA[@]}" "$@"
+exec swift test ${EXTRA[@]+"${EXTRA[@]}"} "$@"
