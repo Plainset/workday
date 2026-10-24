@@ -208,3 +208,23 @@ struct Cycle4RegressionTests {
         #expect(motion.calm(t: wake + LiquidMotion.wakeDuration) == 1)
     }
 }
+
+@Suite("Review cycle 5 regressions")
+struct Cycle5RegressionTests {
+    final class Wall { var now: Double = 2_000_000 }
+
+    @Test("Q1: a transition created at S is never drawn with an earlier (stale) frame time")
+    func crossLayerStaleDraw() {
+        let wall = Wall()
+        let motion = LiquidMotion(wallClock: { wall.now })
+        let key = DayKey(year: 2026, month: 10, day: 24)
+        _ = motion.fraction(for: key, target: 0.2, t: wall.now, animated: true)
+        wall.now += 100
+        // Live layer (fresh frame time) records a change to 0.5 at S = now.
+        _ = motion.fraction(for: key, target: 0.5, t: wall.now, animated: true)
+        wall.now += LiquidMotion.fillDuration + 5
+        // The day moves to a still layer whose last frame time predates S; same target.
+        let staleT = wall.now - 200
+        #expect(motion.fraction(for: key, target: 0.5, t: staleT, animated: true) == 0.5)
+    }
+}

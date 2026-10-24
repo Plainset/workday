@@ -97,3 +97,14 @@ Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, p
 |---|---|---|---|
 | P1 | high | While a layer holds a still frame, a data change redraws with the stale frame time: new transitions look finished, the loop never wakes, liquid keeps the old level (esp. editor MiniGlass) | fixed `3d31010`: `LiquidMotion` moved to WorkdayCore; transitions/impulses stamped with the wall clock and started from the level reached by now; regression test `staleFrameTimeStillAnimates` + `calmCurve` |
 | P2 | low | Year waves stop at the 3 s settle cutoff rather than easing out | no change: energy at the cutoff is exp(−3.9) ≈ 0.02 and year amplitude is capped at 1 pt, so the final step is ≈0.02 pt |
+
+## Cycle 5 — revision `e20b665` (source = `3d31010`)
+
+| Cycle | Revision reviewed | Reviewer(s) | Verdict | Summary |
+|---|---|---|---|---|
+| 5 | `e20b665` | Functional reviewer (tests 47/47) | APPROVED | No findings |
+| 5 | `e20b665` | UI/UX + macOS reviewer | APPROVED | P1 verified fixed; one low edge case Q1 |
+
+| ID | Sev | Finding | Resolution |
+|---|---|---|---|
+| Q1 | low | A day moving from the live layer to a still idle layer could draw a pre-change level (transition evaluated at a stale frame time) | fixed (cycle 6 commit): `fraction()` evaluates at `max(t, wallClock)`; test `crossLayerStaleDraw` |

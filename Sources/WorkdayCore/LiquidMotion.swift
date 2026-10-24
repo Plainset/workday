@@ -45,7 +45,9 @@ public final class LiquidMotion {
             transitions[key] = tr
             impulses[key] = stamp
         }
-        return value(tr, t)
+        // Never draw a transition as if it were earlier than now (a layer redrawing with a stale frame time,
+        // e.g. a day just moved from the live layer into a still layer, must not show a pre-change level).
+        return value(tr, stamp)
     }
 
     private func value(_ tr: Transition, _ t: Double) -> Double {
