@@ -60,11 +60,13 @@ app/UI findings in `2c20e84`. Evidence regenerated for `2c20e84`: 42/42 tests, u
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| F11 | low | `poweringOff` reset after 90 s can show the quit alert during a very slow logout | cycle 3 |
-| F12 | low | Resume after a backwards clock can start a piece in the future (stop refused) | cycle 3 |
-| F13 | low | Stop & Quit terminates even when the stop failed | cycle 3 |
-| U18 | high | Year view at small window sizes: ~4 pt tiles, day numbers truncate to first digit (`year-minsize-*.png`) | cycle 3 |
-| U19 | medium | WaterlineSplit mask doesn't follow the drawn liquid during pour-in/slosh/hover growth | cycle 3 |
-| U20 | medium | Live session redraws the whole month at 24 fps; per-minute target change sloshes; MiniGlass visibility unproven | cycle 3 |
-| U21 | low-med | Year view doesn't take focus on appear; focus overrides hover readout; Space unhandled | cycle 3 |
-| U22 | low/gap | CPU only sampled in the paused state; need key-window measurements | cycle 3 |
+| F11 | low | `poweringOff` reset after 90 s can show the quit alert during a very slow logout | fixed `aa56666` |
+| F12 | low | Resume after a backwards clock can start a piece in the future (stop refused) | fixed `aa56666` |
+| F13 | low | Stop & Quit terminates even when the stop failed | fixed `aa56666` |
+| U18 | high | Year view at small window sizes: ~4 pt tiles, day numbers truncate to first digit (`year-minsize-*.png`) | fixed `aa56666` |
+| U19 | medium | WaterlineSplit mask doesn't follow the drawn liquid during pour-in/slosh/hover growth | fixed `aa56666` |
+| U20 | medium | Live session redraws the whole month at 24 fps; per-minute target change sloshes; MiniGlass visibility unproven | fixed `aa56666` |
+| U21 | low-med | Year view doesn't take focus on appear; focus overrides hover readout; Space unhandled | fixed `aa56666` |
+| U22 | low/gap | CPU only sampled in the paused state; need key-window measurements | fixed `aa56666` |
+
+Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, perf) regenerated for `aa56666`.

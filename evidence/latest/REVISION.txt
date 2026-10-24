@@ -1,5 +1,4 @@
-revision: 90cf2725e864fc780d13e686d2cf3a28a744c7c7
- M docs/manual-verification.md
+revision: aa566667a4ae4527ffa74843107368709bba0690
  M evidence/latest/REVISION.txt
  D evidence/latest/build.log
  D evidence/latest/environment.txt
