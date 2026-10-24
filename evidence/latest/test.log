@@ -1,147 +1,151 @@
 [0/1] Planning build
 Building for debugging...
 [0/5] Write swift-version--1AB21518FC5DEDBE.txt
-[2/16] Compiling WorkdayCore DemoData.swift
-[3/16] Compiling WorkdayCore GoalsAndReminders.swift
-[4/16] Compiling WorkdayCore WorkLedger.swift
-[5/16] Compiling WorkdayCore TimeMath.swift
-[6/16] Compiling WorkdayCore WorkSession.swift
-[7/16] Compiling WorkdayCore LiquidMotion.swift
-[8/16] Compiling WorkdayCore SQLite.swift
-[9/16] Compiling WorkdayCore BackupManager.swift
-[10/16] Compiling WorkdayCore DayKey.swift
-[11/16] Emitting module WorkdayCore
-[12/16] Compiling WorkdayCore WorkStore.swift
-[13/17] Compiling WorkdayCore WorkdaySettings.swift
-[14/29] Compiling Workday AppDelegate.swift
-[15/29] Compiling Workday AppModel.swift
-[16/29] Compiling Workday CalendarViews.swift
-[17/29] Compiling Workday DayEditorView.swift
-[18/29] Compiling Workday Liquid.swift
-[19/29] Compiling Workday MenuPopoverView.swift
-[20/29] Compiling Workday RecoveryView.swift
-[21/29] Compiling Workday Services.swift
-[22/29] Compiling Workday SettingsView.swift
-[23/29] Compiling Workday SnapshotRenderer.swift
-[24/29] Emitting module Workday
-[25/29] Compiling Workday Theme.swift
-[26/29] Compiling Workday StatusItem.swift
-[27/30] Compiling Workday main.swift
+[2/16] Emitting module WorkdayCore
+[3/16] Compiling WorkdayCore WorkSession.swift
+[4/16] Compiling WorkdayCore TimeMath.swift
+[5/17] Compiling WorkdayCore WorkStore.swift
+[6/17] Compiling WorkdayCore LiquidMotion.swift
+[7/17] Compiling WorkdayCore SQLite.swift
+[8/17] Compiling WorkdayCore WorkdaySettings.swift
+[9/17] Compiling WorkdayCore WorkLedger.swift
+[10/17] Compiling WorkdayCore DemoData.swift
+[11/17] Compiling WorkdayCore GoalsAndReminders.swift
+[12/17] Compiling WorkdayCore BackupManager.swift
+[13/17] Compiling WorkdayCore DayKey.swift
+[14/29] Compiling Workday RecoveryView.swift
+[15/29] Compiling Workday Services.swift
+[16/29] Compiling Workday SettingsView.swift
+[17/29] Compiling Workday SnapshotRenderer.swift
+[18/29] Compiling Workday Theme.swift
+[19/29] Compiling Workday StatusItem.swift
+[20/30] Compiling Workday main.swift
+[21/30] Compiling Workday CalendarViews.swift
+[22/30] Compiling Workday DayEditorView.swift
+[23/30] Compiling Workday Liquid.swift
+[24/30] Compiling Workday MenuPopoverView.swift
+[25/30] Compiling Workday AppDelegate.swift
+[26/30] Compiling Workday AppModel.swift
+[27/30] Emitting module Workday
 [27/29] Linking Workday
 [28/29] Applying Workday
-Build complete! (3.55s)
+Build complete! (2.78s)
 ◇ Test run started.
 ↳ Testing Library Version: 1902
 ↳ Target Platform: arm64e-apple-macos14.0
-◇ Suite "Crash and restart recovery (A05)" started.
-◇ Suite "Goals, streaks and reminders (A10)" started.
 ◇ Suite "Timer, sessions and editing (A01, A02, A06)" started.
+◇ Suite "Backups (A11)" started.
+◇ Suite "Review cycle 2 regressions" started.
+◇ Suite "Goals, streaks and reminders (A10)" started.
 ◇ Suite "Calendar math (A03, A04, A07, A08)" started.
 ◇ Suite "Review cycle 1 regressions" started.
-◇ Test "Missed completed day breaks the streak; settings persist and are clamped" started.
 ◇ Suite "Review cycle 4 regressions" started.
-◇ Test "Custom end and resume split the gap" started.
-◇ Test "Unresolved session survives relaunch and the gap is not silently counted" started.
-◇ Test "Exclude and keep running starts a new interval at the relaunch time" started.
-◇ Test "Count the gap and keep running continues the same session" started.
-◇ Suite "Review cycle 2 regressions" started.
-◇ Test "Exclude the gap: confirmed portion survives" started.
-◇ Suite "Backups (A11)" started.
-◇ Test "Goal changes progress; streak rules are deterministic" started.
-◇ Test "Shutdown checkpoint is reported as an exact stop" started.
-◇ Test "A01: Start/Stop/Start accumulates; Start is idempotent; history survives reopening" started.
-◇ Test "Notification bookkeeping is durable and once-per-day" started.
-◇ Test "Custom bounds are validated" started.
-◇ Test "A06: add, edit and delete past sessions update totals immediately" started.
-◇ Test "Cross-day impact preview lists other affected days" started.
-◇ Test "Sessions touching a day include cross-midnight sessions on both days" started.
-◇ Test "Total time beyond 18h is never clipped" started.
+◇ Suite "Crash and restart recovery (A05)" started.
 ◇ Test "A02: active session counts wall-clock time across sleep without pausing" started.
-◇ Test "Starting a new session while recovery is pending never double counts the gap" started.
-◇ Test "Goal notification fires once per day; reminders respect preferences and windows" started.
-◇ Test "Running session can't be edited and blocks overlapping manual entries" started.
-◇ Test "Count the gap: counts start through relaunch, exactly once" started.
+◇ Suite "Review cycle 5 regressions" started.
 ◇ Test "A03: live session crossing midnight updates both days" started.
-◇ Test "A07: fill scale 0h empty, 9h half, 18h full, 19h full plus overflow" started.
-◇ Test "Multi-day interval splits into each full local day" started.
 ◇ Test "A06: invalid and overlapping ranges are rejected without corrupting data" started.
-◇ Test "A04: DST fall-back night (25-hour day) counts the repeated hour once as real time" started.
-◇ Test "A03: 23:30–01:15 gives 30m to day one and 75m to day two" started.
-◇ Test "A08: month grids align weekdays, include leap day, and cover every day exactly once" started.
+◇ Test "Corrupted and partial backups are rejected; current data untouched" started.
+◇ Test "Sessions touching a day include cross-midnight sessions on both days" started.
+◇ Test "A01: Start/Stop/Start accumulates; Start is idempotent; history survives reopening" started.
+◇ Test "Cross-day impact preview lists other affected days" started.
+◇ Test "Backups include unresolved recovery state; restore then re-detects nothing extra" started.
+◇ Test "Automatic snapshot is created daily only when data changed, and restore round-trips" started.
+◇ Test "Running session can't be edited and blocks overlapping manual entries" started.
+◇ Test "Multi-day interval splits into each full local day" started.
+◇ Test "A06: add, edit and delete past sessions update totals immediately" started.
+◇ Test "Retention keeps the newest 30 automatic snapshots" started.
+◇ Test "Missed completed day breaks the streak; settings persist and are clamped" started.
+◇ Test "Goal changes progress; streak rules are deterministic" started.
+◇ Test "Total time beyond 18h is never clipped" started.
 ◇ Test "A04: DST spring-forward night keeps absolute duration; dates stable" started.
-◇ Test "F5: a manual session ending within the tolerance is clamped so Start still works" started.
-◇ Test "F1: permission is requested when a notification feature is on and undecided — including the default" started.
+◇ Test "Notification bookkeeping is durable and once-per-day" started.
+◇ Test "A03: 23:30–01:15 gives 30m to day one and 75m to day two" started.
+◇ Test "A04: Time zone change re-partitions dates using the current zone, durations unchanged" started.
+◇ Test "Goal notification fires once per day; reminders respect preferences and windows" started.
+◇ Test "U-a11y: day accessibility label contains the full date and exact hours" started.
+◇ Test "F7 follow-up: pruning spares the newest valid backup when every kept file is corrupt" started.
+◇ Test "F12: resuming is refused while the clock is behind the relaunch; resolving without resume works" started.
+◇ Test "A04: DST fall-back night (25-hour day) counts the repeated hour once as real time" started.
+◇ Test "A07: fill scale 0h empty, 9h half, 18h full, 19h full plus overflow" started.
+◇ Test "F4: stopping with the clock moved backwards keeps the session" started.
 ◇ Test "F7: last backup date ignores pre-restore safety copies" started.
+◇ Test "A08: month grids align weekdays, include leap day, and cover every day exactly once" started.
+◇ Test "F5: a manual session ending within the tolerance is clamped so Start still works" started.
+◇ Test "F2: 'resume from relaunch' explicitly counts relaunch → now" started.
 ◇ Test "F9: restoring an older backup does not re-arm today's goal notification" started.
 ◇ Test "F2: deciding late with 'resume from now' does not count the time since relaunch" started.
 ◇ Test "F10: check-in reminder only for a session already running at the chosen time" started.
-◇ Test "F4: stopping with the clock moved backwards keeps the session" started.
+◇ Test "F1: permission is requested when a notification feature is on and undecided — including the default" started.
 ◇ Test "F4: relaunch with an earlier clock preserves the confirmed portion" started.
-◇ Test "F2: 'resume from relaunch' explicitly counts relaunch → now" started.
-◇ Test "F7 follow-up: pruning spares the newest valid backup when every kept file is corrupt" started.
-◇ Test "U-a11y: day accessibility label contains the full date and exact hours" started.
-◇ Test "P1: a data change while the liquid is holding a still frame animates to the new level" started.
-◇ Test "Backups include unresolved recovery state; restore then re-detects nothing extra" started.
-◇ Test "Automatic snapshot is created daily only when data changed, and restore round-trips" started.
-◇ Test "Corrupted and partial backups are rejected; current data untouched" started.
-◇ Test "F12: resuming is refused while the clock is behind the relaunch; resolving without resume works" started.
-◇ Test "Retention keeps the newest 30 automatic snapshots" started.
-◇ Test "A04: Time zone change re-partitions dates using the current zone, durations unchanged" started.
+◇ Test "Exclude the gap: confirmed portion survives" started.
+◇ Test "Custom end and resume split the gap" started.
+◇ Test "Count the gap and keep running continues the same session" started.
+◇ Test "Exclude and keep running starts a new interval at the relaunch time" started.
+◇ Test "Count the gap: counts start through relaunch, exactly once" started.
+◇ Test "Starting a new session while recovery is pending never double counts the gap" started.
+◇ Test "Unresolved session survives relaunch and the gap is not silently counted" started.
+◇ Test "Shutdown checkpoint is reported as an exact stop" started.
+◇ Test "Custom bounds are validated" started.
 ◇ Test "Calm eases to a still surface after the drift period and ramps back on interaction" started.
+◇ Test "P1: a data change while the liquid is holding a still frame animates to the new level" started.
+◇ Test "Q1: a transition created at S is never drawn with an earlier (stale) frame time" started.
 ✔ Test "Calm eases to a still surface after the drift period and ramps back on interaction" passed after 0.001 seconds.
-✔ Test "P1: a data change while the liquid is holding a still frame animates to the new level" passed after 0.001 seconds.
-✔ Suite "Review cycle 4 regressions" passed after 0.001 seconds.
+✔ Test "Q1: a transition created at S is never drawn with an earlier (stale) frame time" passed after 0.001 seconds.
 ✔ Test "A07: fill scale 0h empty, 9h half, 18h full, 19h full plus overflow" passed after 0.001 seconds.
+✔ Test "P1: a data change while the liquid is holding a still frame animates to the new level" passed after 0.001 seconds.
+✔ Suite "Review cycle 5 regressions" passed after 0.001 seconds.
+✔ Suite "Review cycle 4 regressions" passed after 0.001 seconds.
 ✔ Test "A03: 23:30–01:15 gives 30m to day one and 75m to day two" passed after 0.001 seconds.
-✔ Test "A04: DST spring-forward night keeps absolute duration; dates stable" passed after 0.001 seconds.
-✔ Test "A04: DST fall-back night (25-hour day) counts the repeated hour once as real time" passed after 0.001 seconds.
-✔ Test "A04: Time zone change re-partitions dates using the current zone, durations unchanged" passed after 0.001 seconds.
 ✔ Test "Multi-day interval splits into each full local day" passed after 0.001 seconds.
+✔ Test "A04: DST fall-back night (25-hour day) counts the repeated hour once as real time" passed after 0.001 seconds.
+✔ Test "A04: DST spring-forward night keeps absolute duration; dates stable" passed after 0.001 seconds.
+✔ Test "A04: Time zone change re-partitions dates using the current zone, durations unchanged" passed after 0.001 seconds.
 ✔ Test "A08: month grids align weekdays, include leap day, and cover every day exactly once" passed after 0.011 seconds.
 ✔ Suite "Calendar math (A03, A04, A07, A08)" passed after 0.012 seconds.
-✔ Test "Missed completed day breaks the streak; settings persist and are clamped" passed after 0.071 seconds.
-✔ Test "Exclude and keep running starts a new interval at the relaunch time" passed after 0.099 seconds.
-✔ Test "Custom end and resume split the gap" passed after 0.099 seconds.
-✔ Test "Exclude the gap: confirmed portion survives" passed after 0.099 seconds.
-✔ Test "Count the gap and keep running continues the same session" passed after 0.104 seconds.
-✔ Test "Shutdown checkpoint is reported as an exact stop" passed after 0.108 seconds.
-✔ Test "Unresolved session survives relaunch and the gap is not silently counted" passed after 0.108 seconds.
-✔ Test "Notification bookkeeping is durable and once-per-day" passed after 0.108 seconds.
-✔ Test "A01: Start/Stop/Start accumulates; Start is idempotent; history survives reopening" passed after 0.108 seconds.
-✔ Test "Total time beyond 18h is never clipped" passed after 0.108 seconds.
-✔ Test "Goal notification fires once per day; reminders respect preferences and windows" passed after 0.108 seconds.
-✔ Test "Cross-day impact preview lists other affected days" passed after 0.108 seconds.
-✔ Test "Goal changes progress; streak rules are deterministic" passed after 0.108 seconds.
-✔ Test "Sessions touching a day include cross-midnight sessions on both days" passed after 0.108 seconds.
-✔ Test "Running session can't be edited and blocks overlapping manual entries" passed after 0.108 seconds.
-✔ Test "Starting a new session while recovery is pending never double counts the gap" passed after 0.108 seconds.
-✔ Test "A02: active session counts wall-clock time across sleep without pausing" passed after 0.108 seconds.
-✔ Suite "Goals, streaks and reminders (A10)" passed after 0.109 seconds.
-✔ Test "A06: add, edit and delete past sessions update totals immediately" passed after 0.108 seconds.
-✔ Test "Count the gap: counts start through relaunch, exactly once" passed after 0.136 seconds.
-✔ Test "Custom bounds are validated" passed after 0.160 seconds.
-✔ Suite "Crash and restart recovery (A05)" passed after 0.160 seconds.
-✔ Test "A06: invalid and overlapping ranges are rejected without corrupting data" passed after 0.195 seconds.
-✔ Test "F7: last backup date ignores pre-restore safety copies" passed after 0.284 seconds.
-✔ Test "F9: restoring an older backup does not re-arm today's goal notification" passed after 0.284 seconds.
+✔ Test "A06: invalid and overlapping ranges are rejected without corrupting data" passed after 0.243 seconds.
+✔ Test "A01: Start/Stop/Start accumulates; Start is idempotent; history survives reopening" passed after 0.242 seconds.
+✔ Test "Corrupted and partial backups are rejected; current data untouched" passed after 0.243 seconds.
+✔ Test "Sessions touching a day include cross-midnight sessions on both days" passed after 0.242 seconds.
+✔ Test "A02: active session counts wall-clock time across sleep without pausing" passed after 0.248 seconds.
+✔ Test "Automatic snapshot is created daily only when data changed, and restore round-trips" passed after 0.248 seconds.
+✔ Test "Running session can't be edited and blocks overlapping manual entries" passed after 0.248 seconds.
+✔ Test "A06: add, edit and delete past sessions update totals immediately" passed after 0.248 seconds.
+✔ Test "Backups include unresolved recovery state; restore then re-detects nothing extra" passed after 0.248 seconds.
+✔ Test "A03: live session crossing midnight updates both days" passed after 0.248 seconds.
+✔ Test "Goal changes progress; streak rules are deterministic" passed after 0.248 seconds.
+✔ Test "Total time beyond 18h is never clipped" passed after 0.248 seconds.
+✔ Test "Retention keeps the newest 30 automatic snapshots" passed after 0.248 seconds.
+✔ Test "U-a11y: day accessibility label contains the full date and exact hours" passed after 0.248 seconds.
+✔ Test "Missed completed day breaks the streak; settings persist and are clamped" passed after 0.248 seconds.
+✔ Test "Cross-day impact preview lists other affected days" passed after 0.248 seconds.
+✔ Test "Goal notification fires once per day; reminders respect preferences and windows" passed after 0.248 seconds.
+✔ Test "F7 follow-up: pruning spares the newest valid backup when every kept file is corrupt" passed after 0.248 seconds.
+✔ Test "F12: resuming is refused while the clock is behind the relaunch; resolving without resume works" passed after 0.248 seconds.
+✔ Suite "Backups (A11)" passed after 0.248 seconds.
+✔ Suite "Timer, sessions and editing (A01, A02, A06)" passed after 0.248 seconds.
+✔ Test "Notification bookkeeping is durable and once-per-day" passed after 0.248 seconds.
+✔ Suite "Review cycle 2 regressions" passed after 0.248 seconds.
+✔ Suite "Goals, streaks and reminders (A10)" passed after 0.248 seconds.
+✔ Test "F4: stopping with the clock moved backwards keeps the session" passed after 0.257 seconds.
+✔ Test "F7: last backup date ignores pre-restore safety copies" passed after 0.261 seconds.
 ✔ Test "F5: a manual session ending within the tolerance is clamped so Start still works" passed after 0.284 seconds.
-✔ Test "A03: live session crossing midnight updates both days" passed after 0.284 seconds.
-✔ Test "F4: relaunch with an earlier clock preserves the confirmed portion" passed after 0.284 seconds.
-✔ Test "F10: check-in reminder only for a session already running at the chosen time" passed after 0.284 seconds.
-✔ Test "F1: permission is requested when a notification feature is on and undecided — including the default" passed after 0.284 seconds.
-✔ Test "F2: deciding late with 'resume from now' does not count the time since relaunch" passed after 0.284 seconds.
-✔ Test "F7 follow-up: pruning spares the newest valid backup when every kept file is corrupt" passed after 0.284 seconds.
-✔ Test "Backups include unresolved recovery state; restore then re-detects nothing extra" passed after 0.284 seconds.
-✔ Test "Retention keeps the newest 30 automatic snapshots" passed after 0.284 seconds.
-✔ Test "Corrupted and partial backups are rejected; current data untouched" passed after 0.284 seconds.
-✔ Test "U-a11y: day accessibility label contains the full date and exact hours" passed after 0.284 seconds.
-✔ Test "F2: 'resume from relaunch' explicitly counts relaunch → now" passed after 0.284 seconds.
-✔ Test "Automatic snapshot is created daily only when data changed, and restore round-trips" passed after 0.284 seconds.
-✔ Test "F12: resuming is refused while the clock is behind the relaunch; resolving without resume works" passed after 0.284 seconds.
-✔ Test "F4: stopping with the clock moved backwards keeps the session" passed after 0.284 seconds.
-✔ Suite "Timer, sessions and editing (A01, A02, A06)" passed after 0.285 seconds.
-✔ Suite "Backups (A11)" passed after 0.285 seconds.
-✔ Suite "Review cycle 2 regressions" passed after 0.285 seconds.
-✔ Suite "Review cycle 1 regressions" passed after 0.285 seconds.
-✔ Test run with 47 tests in 8 suites passed after 0.285 seconds.
+✔ Test "F9: restoring an older backup does not re-arm today's goal notification" passed after 0.289 seconds.
+✔ Test "F2: 'resume from relaunch' explicitly counts relaunch → now" passed after 0.289 seconds.
+✔ Test "F10: check-in reminder only for a session already running at the chosen time" passed after 0.289 seconds.
+✔ Test "Exclude the gap: confirmed portion survives" passed after 0.289 seconds.
+✔ Test "F1: permission is requested when a notification feature is on and undecided — including the default" passed after 0.289 seconds.
+✔ Test "F2: deciding late with 'resume from now' does not count the time since relaunch" passed after 0.289 seconds.
+✔ Test "Count the gap and keep running continues the same session" passed after 0.289 seconds.
+✔ Test "Custom end and resume split the gap" passed after 0.289 seconds.
+✔ Test "Exclude and keep running starts a new interval at the relaunch time" passed after 0.289 seconds.
+✔ Test "Shutdown checkpoint is reported as an exact stop" passed after 0.288 seconds.
+✔ Test "Custom bounds are validated" passed after 0.288 seconds.
+✔ Test "Unresolved session survives relaunch and the gap is not silently counted" passed after 0.288 seconds.
+✔ Test "Starting a new session while recovery is pending never double counts the gap" passed after 0.289 seconds.
+✔ Test "F4: relaunch with an earlier clock preserves the confirmed portion" passed after 0.289 seconds.
+✔ Test "Count the gap: counts start through relaunch, exactly once" passed after 0.289 seconds.
+✔ Suite "Crash and restart recovery (A05)" passed after 0.289 seconds.
+✔ Suite "Review cycle 1 regressions" passed after 0.289 seconds.
+✔ Test run with 48 tests in 9 suites passed after 0.290 seconds.
 test exit: 0

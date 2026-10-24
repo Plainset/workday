@@ -107,4 +107,4 @@ Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, p
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| Q1 | low | A day moving from the live layer to a still idle layer could draw a pre-change level (transition evaluated at a stale frame time) | fixed (cycle 6 commit): `fraction()` evaluates at `max(t, wallClock)`; test `crossLayerStaleDraw` |
+| Q1 | low | A day moving from the live layer to a still idle layer could draw a pre-change level (transition evaluated at a stale frame time) | fixed `3e395e1`: `fraction()` evaluates at `max(t, wallClock)`; test `crossLayerStaleDraw` |
