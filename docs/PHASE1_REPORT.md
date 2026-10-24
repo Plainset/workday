@@ -1,12 +1,13 @@
 # Phase 1 — open-source release: final report
 
-**Status: technically complete and independently approved. Publication awaits the owner's authorisation.**
+**Status: complete, independently approved and published** (owner authorised publication on 2026-10-24).
 Phase 2 (friends system) was not started, per owner instruction.
 
 | | |
 |---|---|
-| Repository | `Plainset/workday` on GitHub — **private** |
-| Approved release commit | `1e5bcff1f76367c0e509b73ea1a98cacab61a8a4`, annotated tag **`v1.0.0`** (local, not pushed) |
+| Repository | <https://github.com/Plainset/workday> — **public** |
+| Approved release commit | `1e5bcff1f76367c0e509b73ea1a98cacab61a8a4`, annotated tag **`v1.0.0`** |
+| Release | <https://github.com/Plainset/workday/releases/tag/v1.0.0> — published 2026-10-24 (Release workflow run 40092371464; assets verified: checksums, id, 1.0.0 build 37, universal, signature, DMG) |
 | Review | 4 cycles; reviewers A (functional), B (security & privacy), C (architecture), D (release readiness) all **APPROVED** the exact commit — `docs/review-ledger.md` |
 | Tests | 53 Swift Testing tests, all passing locally and in CI (macOS 15 runner, Xcode 16.4) |
 | CI | build, tests, dependency policy, release-build validation, full-history gitleaks scan — green on `1e5bcff` |
@@ -30,21 +31,26 @@ Phase 2 (friends system) was not started, per owner instruction.
 * **GitHub:** private repo, CI and tag-triggered *draft* release workflow; read-only default token, SHA-pinned
   actions, no secrets, `pull_request` only; Dependabot for actions.
 
-## Owner actions (not done — require you)
+## Publication (done with owner authorisation)
 
-1. **Authorise publication** — make `Plainset/workday` public, push tag `v1.0.0` (the Release workflow then creates a
-   draft release with the artefacts) and publish the draft.
-2. **After going public** — follow `docs/RELEASING.md` → *Going public*: enable private vulnerability reporting,
-   Dependabot alerts and secret-scanning push protection; protect `main` with the two CI checks; require approval for
-   first-time contributors' workflows. Never `git push --all/--mirror` (keeps the backup branch private).
-3. **Optional, for notarised builds** — Developer ID Application certificate + `xcrun notarytool store-credentials`,
-   then `DEVELOPER_ID_APPLICATION=… NOTARY_PROFILE=… ./scripts/package_release.sh` and replace the draft's ZIP/DMG.
-   v1.0.0 artefacts are ad-hoc signed and not notarised.
-4. **Your installed copy** still runs a pre-1.0 build (`local.workday.tracker`). After installing 1.0.0
-   (`./scripts/install.sh`): remove the stale "Workday" entry in Login Items if listed, allow notifications again,
-   and switch launch at login off if you don't want it.
+* Repository made public; only `main` and tag `v1.0.0` are on GitHub (the backup branch remains local).
+* Enabled: private vulnerability reporting, Dependabot alerts and security updates, secret scanning with push
+  protection, approval for first-time contributors' workflows, and branch protection on `main` (required checks
+  *Build, test and validate release build* and *Secret scan (full history)*; no force pushes or deletion).
+* Tag `v1.0.0` pushed → Release workflow built, validated and drafted the release → artefacts downloaded and verified
+  → release published.
+
+## Remaining owner actions
+
+1. **Optional, for notarised builds** — Developer ID Application certificate + `xcrun notarytool store-credentials`,
+   then `DEVELOPER_ID_APPLICATION=… NOTARY_PROFILE=… ./scripts/package_release.sh` and upload the notarised ZIP/DMG
+   (v1.0.0 artefacts are ad-hoc signed and not notarised).
+2. **Your installed copy** still runs a pre-1.0 build (`local.workday.tracker`). After installing 1.0.0
+   (`./scripts/install.sh` or the DMG): remove the stale "Workday" entry in Login Items if listed, allow
+   notifications again, and switch launch at login off if you don't want it.
+3. Keep `backup/pre-public-rewrite` local (or move it to an off-repo `git bundle`); never `git push --all/--mirror`.
 
 ## Not verified (environment-limited)
 
 Real Gatekeeper "Open Anyway" flow on a quarantined download; Developer ID signing/notarisation (no credentials);
-the Release workflow itself (needs a tag push); repository security settings (only configurable once public).
+the Release workflow and repository settings are now verified (see above).

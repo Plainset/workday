@@ -200,3 +200,9 @@ earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
 owner authorises publication).** Later commits on `main` change documentation only.
 Open items are owner actions only (see `docs/PHASE1_REPORT.md`). Phase 2 (friends system) not started, per owner
 instruction.
+
+### Publication (2026-10-24)
+
+Owner authorised publication. Repository made public; security settings applied; tag `v1.0.0` (→ `1e5bcff`) pushed;
+Release workflow run 40092371464 succeeded; draft assets verified (SHA256, bundle id, 1.0.0/37, universal, signature,
+DMG) and the release published: https://github.com/Plainset/workday/releases/tag/v1.0.0
