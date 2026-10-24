@@ -95,5 +95,5 @@ Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, p
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| P1 | high | While a layer holds a still frame, a data change redraws with the stale frame time: new transitions look finished, the loop never wakes, liquid keeps the old level (esp. editor MiniGlass) | fixed (cycle 5 commit): `LiquidMotion` moved to WorkdayCore; transitions/impulses stamped with the wall clock and started from the level reached by now; regression test `staleFrameTimeStillAnimates` + `calmCurve` |
+| P1 | high | While a layer holds a still frame, a data change redraws with the stale frame time: new transitions look finished, the loop never wakes, liquid keeps the old level (esp. editor MiniGlass) | fixed `3d31010`: `LiquidMotion` moved to WorkdayCore; transitions/impulses stamped with the wall clock and started from the level reached by now; regression test `staleFrameTimeStillAnimates` + `calmCurve` |
 | P2 | low | Year waves stop at the 3 s settle cutoff rather than easing out | no change: energy at the cutoff is exp(−3.9) ≈ 0.02 and year amplitude is capped at 1 pt, so the final step is ≈0.02 pt |
