@@ -27,6 +27,7 @@ Minimum macOS 14 (needed for the Observation framework and modern SwiftUI APIs).
 | Backups, paths, single-instance lock | `Sources/WorkdayCore/BackupManager.swift` |
 | App lifecycle, Dock policy, OS signals, timers, menu | `Sources/Workday/AppDelegate.swift` |
 | Menu bar item / popover | `Sources/Workday/StatusItem.swift`, `MenuPopoverView.swift` |
+| Liquid animation state (fill transitions, slosh, calm/wake) | `Sources/WorkdayCore/LiquidMotion.swift` (unit-tested) |
 | Liquid renderer | `Sources/Workday/Liquid.swift` |
 | Month / year calendar | `Sources/Workday/CalendarViews.swift` |
 | Day editor | `Sources/Workday/DayEditorView.swift` |

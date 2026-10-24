@@ -168,3 +168,43 @@ struct Cycle2RegressionTests {
                 && big.contains("30 minutes pending review"))
     }
 }
+
+/// Regression tests for findings from independent review cycle 4.
+@Suite("Review cycle 4 regressions")
+struct Cycle4RegressionTests {
+    final class Wall { var now: Double = 1_000_000 }
+
+    @Test("P1: a data change while the liquid is holding a still frame animates to the new level")
+    func staleFrameTimeStillAnimates() {
+        let wall = Wall()
+        let motion = LiquidMotion(wallClock: { wall.now })
+        let key = DayKey(year: 2026, month: 10, day: 23)
+        // Layer appears and pours in to 20 %, then the user leaves it alone; frames stop.
+        let frameTime = wall.now
+        _ = motion.fraction(for: key, target: 0.2, t: frameTime, animated: true)
+        wall.now += LiquidMotion.idleDriftDuration + LiquidMotion.calmDownDuration + 60
+        #expect(!motion.isSettling(t: wall.now))
+        #expect(motion.fraction(for: key, target: 0.2, t: wall.now, animated: true) == 0.2)
+        // An edit raises the day to 40 %; SwiftUI redraws with the stale frame time.
+        let staleDraw = motion.fraction(for: key, target: 0.4, t: frameTime, animated: true)
+        #expect(staleDraw == 0.2)                           // still the old level on that redraw…
+        #expect(motion.isSettling(t: wall.now))             // …but the loop sees motion and produces frames
+        let settled = motion.fraction(for: key, target: 0.4, t: wall.now + LiquidMotion.fillDuration, animated: true)
+        #expect(settled == 0.4)                             // and the liquid reaches the new level
+        #expect(motion.energy(for: key, t: wall.now) > 0.9) // with a fresh slosh, not a stale one
+    }
+
+    @Test("Calm eases to a still surface after the drift period and ramps back on interaction")
+    func calmCurve() {
+        let wall = Wall()
+        let motion = LiquidMotion(wallClock: { wall.now })
+        let start = wall.now
+        #expect(motion.calm(t: start + 10) == 1)
+        #expect(motion.calm(t: start + LiquidMotion.idleDriftDuration + LiquidMotion.calmDownDuration + 0.1) == 0)
+        let wake = start + 100
+        motion.touch(t: wake)
+        #expect(motion.calm(t: wake) == 0)
+        #expect(motion.calm(t: wake + LiquidMotion.wakeDuration / 2) > 0.4)
+        #expect(motion.calm(t: wake + LiquidMotion.wakeDuration) == 1)
+    }
+}

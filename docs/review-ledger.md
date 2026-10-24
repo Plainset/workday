@@ -85,3 +85,15 @@ Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, p
 | R3 | low | Year view in scroll mode: arrow-key focus can move off-screen | fixed `f295749` |
 | R4 | low | Year number split is static while compact waves slosh up to ~2.9 pt | fixed `f295749` |
 | R5 | low | Dimmed-day colours: confirm with a dark snapshot | no change: `month-dark.png` / `month-previous-overflow-dark.png` show adjacent days legibly; hover only grows the tile by 2 pt |
+
+## Cycle 4 — revision `3725ca5` (source = `f295749`)
+
+| Cycle | Revision reviewed | Reviewer(s) | Verdict | Summary |
+|---|---|---|---|---|
+| 4 | `3725ca5` | Functional reviewer (tests 45/45) | APPROVED | No functional change; evidence matches source |
+| 4 | `3725ca5` | UI/UX + macOS reviewer | CHANGES_REQUIRED | R1–R4 verified fixed; new high regression P1 |
+
+| ID | Sev | Finding | Resolution |
+|---|---|---|---|
+| P1 | high | While a layer holds a still frame, a data change redraws with the stale frame time: new transitions look finished, the loop never wakes, liquid keeps the old level (esp. editor MiniGlass) | fixed (cycle 5 commit): `LiquidMotion` moved to WorkdayCore; transitions/impulses stamped with the wall clock and started from the level reached by now; regression test `staleFrameTimeStillAnimates` + `calmCurve` |
+| P2 | low | Year waves stop at the 3 s settle cutoff rather than easing out | no change: energy at the cutoff is exp(−3.9) ≈ 0.02 and year amplitude is capped at 1 pt, so the final step is ≈0.02 pt |
