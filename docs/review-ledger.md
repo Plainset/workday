@@ -118,3 +118,10 @@ Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, p
 
 Final approved revision: `1d3883ac2d83c96cd8bd6e3ad53f8d36775afa33` (application source identical to `3e395e1`; the
 installable `dist/Workday.app` and `evidence/latest/` were built from that source). Later commits change docs only.
+
+---
+
+# Open-source release (Phase 1) and friends system (Phase 2)
+
+Requirements: `docs/RELEASE_AND_FRIENDS_SPEC.md`. Commit SHAs below refer to the published (rewritten) history;
+earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
