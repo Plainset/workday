@@ -186,3 +186,17 @@ earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
 | A5 | low | Upgrade notes claim the login-item choice is honoured, but pre-1.0 builds never recorded it (re-enabled once); restoring an older backup drops the recorded choice | fixed `f85aa7f`: docs corrected; restore preserves `login_item_*` meta (test `restoreKeepsLoginItemChoice`) |
+
+## Phase 1 — cycle 4 — revision `1e5bcff` — FINAL
+
+| Reviewer | Verdict | Summary |
+|---|---|---|
+| A functional (53/53 in fresh clone; universal build; seed/permissions; custom data dir never registers login item) | **APPROVED** | no findings; A1–A5 resolved |
+| B security & privacy (gitleaks fresh clone: 37 commits clean; noreply-only identities; no paths) | **APPROVED** | no new findings |
+| C architecture (53/53; forced write-back failure → full rollback verified) | **APPROVED** | no new findings |
+| D release readiness (fresh-clone package; id/1.0.0/build 37/universal; DMG verified; CI 40090341691 green) | **APPROVED** | no findings |
+
+**Phase 1 approved revision: `1e5bcff1f76367c0e509b73ea1a98cacab61a8a4`, tagged `v1.0.0` (annotated, local until the
+owner authorises publication).** Later commits on `main` change documentation only.
+Open items are owner actions only (see `docs/PHASE1_REPORT.md`). Phase 2 (friends system) not started, per owner
+instruction.
