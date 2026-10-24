@@ -1,7 +1,9 @@
-revision: aa566667a4ae4527ffa74843107368709bba0690
+revision: f2957492d43193637690143278830858cda95238
+ M docs/review-ledger.md
  M evidence/latest/REVISION.txt
  D evidence/latest/build.log
  D evidence/latest/environment.txt
+ D evidence/latest/perf.txt
  D evidence/latest/snapshot.log
  D evidence/latest/snapshots/month-dark.png
  D evidence/latest/snapshots/month-empty-light.png
@@ -19,6 +21,9 @@ revision: aa566667a4ae4527ffa74843107368709bba0690
  D evidence/latest/snapshots/status-items.png
  D evidence/latest/snapshots/tiles-scale-dark.png
  D evidence/latest/snapshots/tiles-scale-light.png
+ D evidence/latest/snapshots/tiles-slosh-dark.png
+ D evidence/latest/snapshots/tiles-slosh-light.png
+ D evidence/latest/snapshots/year-900x800-dark.png
  D evidence/latest/snapshots/year-dark.png
  D evidence/latest/snapshots/year-light.png
  D evidence/latest/snapshots/year-minsize-dark.png
