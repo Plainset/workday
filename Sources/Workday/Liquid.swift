@@ -64,12 +64,35 @@ final class LiquidMotion {
     /// Last time the user interacted with these tiles (pointer movement, keys, navigation).
     private(set) var lastInteraction: Double = Date().timeIntervalSinceReferenceDate
 
-    func touch(t: Double = Date().timeIntervalSinceReferenceDate) { lastInteraction = t }
+    /// When the liquid last started waking from a still surface (for a smooth ramp back up).
+    private var wakeStart: Double = -1_000
+    static let wakeDuration: Double = 0.8
+
+    func touch(t: Double = Date().timeIntervalSinceReferenceDate) {
+        let current = calm(t: t)
+        if current < 1 { wakeStart = t - current * Self.wakeDuration }  // continue from the current level
+        lastInteraction = t
+    }
 
     /// How long the idle drift keeps animating after the last interaction.
     static let idleDriftDuration: Double = 30
+    /// Time over which idle waves ease down to a still surface after the drift period.
+    static let calmDownDuration: Double = 2.5
 
-    func slosh(_ key: DayKey, t: Double) { impulses[key] = t; lastInteraction = t }
+    /// 1 while the user is engaged, easing to 0 after `idleDriftDuration` — idle waves scale with this so the
+    /// liquid settles to a genuinely still frame instead of stepping at a low frame rate.
+    func calm(t: Double) -> Double {
+        let rampUp = min(1, max(0, (t - wakeStart) / Self.wakeDuration))
+        let idle = t - lastInteraction - Self.idleDriftDuration
+        guard idle > 0 else { return rampUp }
+        let p = min(1, idle / Self.calmDownDuration)
+        return min(rampUp, 1 - p * p * (3 - 2 * p))
+    }
+
+    func slosh(_ key: DayKey, t: Double) {
+        impulses[key] = t
+        touch(t: t)
+    }
     func sloshAll(t: Double) { globalImpulse = t }
 
     /// Slosh energy 0...1, decaying after an impulse.
@@ -106,6 +129,7 @@ enum LiquidPainter {
                      cell: LiquidCell,
                      fraction: Double,
                      energy: Double,
+                     calm: Double = 1,
                      time: Double,
                      motion: Bool,
                      scheme: ColorScheme) -> Path? {
@@ -140,7 +164,7 @@ enum LiquidPainter {
             let level = full ? r.minY + (cell.compact ? 1 : 3.5) : r.maxY - h * fraction
             let baseAmp = min(cell.compact ? 1.1 : 2.6, h * 0.035)
             let thin = min(1, fraction * 7 + 0.2)
-            let amp = motion ? baseAmp * (0.6 + 2.4 * energy) * thin : 0
+            let amp = motion ? baseAmp * (0.6 * calm + 2.4 * energy) * thin : 0
             let segments = cell.compact ? 8 : 22
 
             // Back wave: lighter, offset phase, gives depth.
@@ -268,7 +292,8 @@ enum CompactLiquidPainter {
             guard fraction > 0.0005 else { continue }
             let full = fraction >= 0.999
             let level = full ? r.minY + 1 : r.maxY - r.height * fraction
-            let amp: CGFloat = animatedWaves ? min(1.1, r.height * 0.04) * (0.6 + 2 * motion.energy(for: cell.key, t: t)) : 0
+            // Capped at 1 pt so the static number split stays accurate on tiny tiles.
+            let amp: CGFloat = animatedWaves ? min(1.0, r.height * 0.04 * (0.6 * motion.calm(t: t) + 1.4 * motion.energy(for: cell.key, t: t))) : 0
             let phase = LiquidPainter.seed(cell.key)
             let segments = 6
             // Body: wave across the top, then follow the tile's rounded bottom.
@@ -338,13 +363,13 @@ struct LiquidCadence {
 /// automatically when the layer disappears or pauses. (SwiftUI's TimelineView was measured redrawing near
 /// display rate regardless of its schedule, so it isn't used.)
 /// Picks the next frame interval for a layer.
-func liquidInterval(motion: LiquidMotion, cadence: LiquidCadence, live: Bool) -> Double {
-    if motion.isSettling(t: Date().timeIntervalSinceReferenceDate) { return cadence.fastInterval }
-    // Gentle motion while the user is looking/interacting; slower once the calendar is left alone.
-    let untouched = Date().timeIntervalSinceReferenceDate - motion.lastInteraction > LiquidMotion.idleDriftDuration
-    if live { return untouched ? 0.25 : cadence.liveInterval }
-    if cadence.compact { return 0.5 } // year tiles' idle waves are sub-pixel: hold still until something moves
-    return untouched ? 1 : cadence.idleInterval
+/// Next frame interval for a layer, or nil to hold the current (still) frame until something moves.
+func liquidInterval(motion: LiquidMotion, cadence: LiquidCadence, live: Bool) -> Double? {
+    let now = Date().timeIntervalSinceReferenceDate
+    if motion.isSettling(t: now) { return cadence.fastInterval }
+    if live { return cadence.liveInterval }        // one small layer: bubbles stay smooth
+    if cadence.compact { return nil }              // year tiles' idle waves are sub-pixel: hold still
+    return motion.calm(t: now) > 0 ? cadence.idleInterval : nil  // drift while engaged, then a still surface
 }
 
 /// A Canvas that draws many liquid tiles — and their labels — in a single pass, driven by one
@@ -382,11 +407,18 @@ struct LiquidLayer<Labels: View>: View {
             .task(id: AnimationKey(running: running, live: live, interactive: cadence.interactiveState)) {
                 guard running else { return }
                 let motion = motion, cadence = cadence
+                var lastFrame = Date().timeIntervalSinceReferenceDate
+                // Short slices so a hover, key or data change wakes the liquid within ~30 ms even while
+                // it is holding a still frame; a frame is only produced when the chosen interval elapsed.
                 while !Task.isCancelled {
-                    let interval = liquidInterval(motion: motion, cadence: cadence, live: live)
-                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                    try? await Task.sleep(nanoseconds: 33_000_000)
                     if Task.isCancelled { break }
-                    t = Date().timeIntervalSinceReferenceDate
+                    let now = Date().timeIntervalSinceReferenceDate
+                    if let interval = liquidInterval(motion: motion, cadence: cadence, live: live),
+                       now - lastFrame >= interval - 0.004 {
+                        lastFrame = now
+                        t = now
+                    }
                 }
             }
             .accessibilityHidden(true)
@@ -444,7 +476,8 @@ struct LiquidCanvas<Labels: View>: View {
                 let fraction = motion.fraction(for: cell.key, target: cell.targetFraction, t: t, animated: !paused)
                 var ctx = context
                 let body = LiquidPainter.draw(&ctx, cell: cell, fraction: fraction,
-                                              energy: paused ? 0 : motion.energy(for: cell.key, t: t), time: t,
+                                              energy: paused ? 0 : motion.energy(for: cell.key, t: t),
+                                              calm: paused ? 1 : motion.calm(t: t), time: t,
                                               motion: !reduceMotion, scheme: scheme)
                 var labelContext = context
                 if cell.dimmed { labelContext.opacity = 0.6 }

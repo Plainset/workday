@@ -41,8 +41,9 @@ blocked further background GUI interaction; those steps are listed under §3 as 
 
 * `scripts/perf.sh` (fresh process per scenario, real calendar views with demo data in an on-screen, nearly
   transparent click-through window, CPU via getrusage) — results in `evidence/latest/perf.txt`:
-  menu bar only 0.1 %; month idle drift 10 % → 1.3 % after 30 s untouched; timer running 15 % → 3.6 % untouched;
-  worst case continuous slosh 25 % (only during interaction bursts); year idle 1.4 %, year slosh 13.5 %.
+  menu bar only 0.1 %; month idle drift 10 % → 0.7 % (still frame) after 30 s untouched; timer running 13 % → 5.9 %
+  untouched (bubbles stay at 12 fps); worst case continuous slosh 24 % (only during interaction bursts); year idle
+  0.7 %, year slosh 17 %. (Cycle 4 numbers; cycle 3 stepped at 1 fps instead of settling still.)
 * Finding during measurement: the cycle-2 build used ~4–6 % CPU in menu-bar-only mode because the closed popover's
   SwiftUI view re-laid out every second (profiled with `sample`). Fixed: popover content only exists while open,
   per-second ticks only while it is visible (menu bar only now 0.1 %).

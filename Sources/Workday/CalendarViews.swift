@@ -624,8 +624,27 @@ struct YearOverviewView: View {
                 let layout = MiniMonthGeometry.layout(for: geo.size)
                 let content = yearContent(layout: layout, months: months, totals: totals, today: today, cal: cal)
                 if layout.scrolls && !LiquidMotion.settleInstantly {
-                    ScrollView(.vertical) {
-                        content.frame(width: geo.size.width, height: layout.contentHeight, alignment: .topLeading)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) {
+                            content
+                                .frame(width: geo.size.width, height: layout.contentHeight, alignment: .topLeading)
+                                .background(alignment: .topLeading) {
+                                    // Invisible per-month anchors so keyboard focus can scroll into view.
+                                    ZStack(alignment: .topLeading) {
+                                        ForEach(Array(months.enumerated()), id: \.offset) { i, m in
+                                            Color.clear
+                                                .frame(width: layout.panel.width, height: layout.panel.height)
+                                                .id(m)
+                                                .padding(.leading, CGFloat(i % layout.columns) * (layout.panel.width + MiniMonthGeometry.panelGap))
+                                                .padding(.top, CGFloat(i / layout.columns) * (layout.panel.height + MiniMonthGeometry.panelGap))
+                                        }
+                                    }
+                                }
+                        }
+                        .onChange(of: focusedDay) { _, day in
+                            guard let day, focused, hovered == nil else { return }
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { proxy.scrollTo(MonthKey(day)) }
+                        }
                     }
                 } else {
                     // (Offscreen snapshots can't render AppKit scroll views; they show the top of the content.)

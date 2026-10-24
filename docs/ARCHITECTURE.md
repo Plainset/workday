@@ -110,13 +110,14 @@ Restore is disabled while the timer runs.
   Live days get rising bubbles; > 18 h days stay full and add an outer glow, bright rim, foam along the brim,
   sparkles and an icon — the exact hours stay printed.
 * Motion: fill changes animate with a damped settle and trigger a slosh impulse; hovering a tile sloshes it.
-* Cadence: each liquid layer runs a structured `.task(id:)` loop that sleeps for an interval chosen every frame
-  (`liquidInterval`): 30 fps only while a fill transition or slosh is settling; 12 fps for the live tile's bubbles;
-  a 10 fps idle drift for 30 s after the last pointer/keyboard interaction, then 1 fps (live bubbles 4 fps);
-  year tiles hold still (0.5 s) unless something moves. Non-key windows use slower rates; hidden/occluded/
-  minimised windows and **Reduce Motion** draw one still frame and run no loop. The loop is cancelled when the
-  layer disappears. (SwiftUI's `TimelineView` was measured redrawing near display rate regardless of its
-  schedule, so it is not used.)
+* Cadence: each liquid layer runs a structured `.task(id:)` loop that wakes every ~33 ms (so hover, keys or data
+  changes respond immediately) but only produces a frame when the interval chosen by `liquidInterval` has elapsed:
+  30 fps while a fill transition or slosh is settling; 12 fps for the live tile's bubbles (its own one-tile layer);
+  a 10 fps idle drift while the user is engaged. 30 s after the last interaction the idle waves ease to a flat,
+  still surface over 2.5 s and no more frames are drawn until the next interaction, when they ramp back up over
+  0.8 s. Year tiles hold still unless sloshed. Non-key windows use slower rates; hidden/occluded/minimised windows
+  and **Reduce Motion** draw one still frame and run no loop. The loop is cancelled when the layer disappears.
+  (SwiftUI's `TimelineView` was measured redrawing near display rate regardless of its schedule, so it is not used.)
 * The month view draws the running day's tile in its own small layer, so bubbles don't redraw the other 41 tiles.
   Tiny fill changes (the live minute ticking over) apply quietly without a slosh.
 * The year view draws all 365 tiles with one batched Canvas (`CompactLiquidPainter`: a handful of draw calls),

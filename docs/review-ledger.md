@@ -80,8 +80,8 @@ Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, p
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| R1 | medium | Untouched calendar steps at 1 fps (waves) / 4 fps (bubbles) — choppy | cycle 4 |
-| R2 | medium | First interaction after a quiet period waits for the current sleep (≤1 s) | cycle 4 |
-| R3 | low | Year view in scroll mode: arrow-key focus can move off-screen | cycle 4 |
-| R4 | low | Year number split is static while compact waves slosh up to ~2.9 pt | cycle 4 |
+| R1 | medium | Untouched calendar steps at 1 fps (waves) / 4 fps (bubbles) — choppy | fixed (cycle 4 commit) |
+| R2 | medium | First interaction after a quiet period waits for the current sleep (≤1 s) | fixed (cycle 4 commit) |
+| R3 | low | Year view in scroll mode: arrow-key focus can move off-screen | fixed (cycle 4 commit) |
+| R4 | low | Year number split is static while compact waves slosh up to ~2.9 pt | fixed (cycle 4 commit) |
 | R5 | low | Dimmed-day colours: confirm with a dark snapshot | no change: `month-dark.png` / `month-previous-overflow-dark.png` show adjacent days legibly; hover only grows the tile by 2 pt |
