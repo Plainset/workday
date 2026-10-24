@@ -19,7 +19,7 @@ struct TimeMathTests {
     func multiDay() {
         let cal = calendar()
         let slices = TimeMath.slices(start: date(2026, 3, 1, 22), end: date(2026, 3, 4, 2), calendar: cal)
-        #expect(slices.map(\.seconds) == [2 * 3600, 86_400, 86_400, 2 * 3600])
+        #expect(slices.map(\.seconds) == [TimeInterval]([2 * 3600, 86_400, 86_400, 2 * 3600]))
     }
 
     @Test("A04: DST spring-forward night keeps absolute duration; dates stable")
