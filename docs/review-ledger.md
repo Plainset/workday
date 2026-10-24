@@ -70,3 +70,18 @@ app/UI findings in `2c20e84`. Evidence regenerated for `2c20e84`: 42/42 tests, u
 | U22 | low/gap | CPU only sampled in the paused state; need key-window measurements | fixed `aa56666` |
 
 Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, perf) regenerated for `aa56666`.
+
+## Cycle 3 — revision `4ae1c6e`
+
+| Cycle | Revision reviewed | Reviewer(s) | Verdict | Summary |
+|---|---|---|---|---|
+| 3 | `4ae1c6e` | Functional reviewer (re-ran tests: 45/45) | APPROVED | F11–F13 verified; no findings; perf/snapshot modes can't touch real data |
+| 3 | `4ae1c6e` | UI/UX + macOS reviewer | APPROVED | U18–U22 verified; no critical/high; 2 medium + 3 low motion/keyboard polish items recommended before release |
+
+| ID | Sev | Finding | Resolution |
+|---|---|---|---|
+| R1 | medium | Untouched calendar steps at 1 fps (waves) / 4 fps (bubbles) — choppy | cycle 4 |
+| R2 | medium | First interaction after a quiet period waits for the current sleep (≤1 s) | cycle 4 |
+| R3 | low | Year view in scroll mode: arrow-key focus can move off-screen | cycle 4 |
+| R4 | low | Year number split is static while compact waves slosh up to ~2.9 pt | cycle 4 |
+| R5 | low | Dimmed-day colours: confirm with a dark snapshot | no change: `month-dark.png` / `month-previous-overflow-dark.png` show adjacent days legibly; hover only grows the tile by 2 pt |
