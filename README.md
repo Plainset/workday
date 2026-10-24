@@ -70,6 +70,6 @@ Nothing is ever sent off the Mac.
 * `Workday --snapshot <dir>` renders evidence PNGs (light/dark month, year, popover, tile scale, reduced motion,
   empty and recovery states) from deterministic demo data and exits.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design decisions and policies,
+Final handoff: [docs/FINAL_REPORT.md](docs/FINAL_REPORT.md). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design decisions and policies,
 [docs/requirements-checklist.md](docs/requirements-checklist.md) for the requirement-to-evidence matrix and
 [docs/review-ledger.md](docs/review-ledger.md) for the independent review history.

@@ -108,3 +108,13 @@ Cycle 2 fixes in `aa56666`; evidence (45/45 tests, universal build, snapshots, p
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
 | Q1 | low | A day moving from the live layer to a still idle layer could draw a pre-change level (transition evaluated at a stale frame time) | fixed `3e395e1`: `fraction()` evaluates at `max(t, wallClock)`; test `crossLayerStaleDraw` |
+
+## Cycle 6 — revision `1d3883a` (source = `3e395e1`) — FINAL
+
+| Cycle | Revision reviewed | Reviewer(s) | Verdict | Summary |
+|---|---|---|---|---|
+| 6 | `1d3883a` | Functional reviewer (tests 48/48 in private build dir) | **APPROVED** | No findings; evidence matches source |
+| 6 | `1d3883a` | UI/UX + macOS reviewer | **APPROVED** | Q1 verified fixed; no critical/high/medium; P2 (low, cosmetic) accepted |
+
+Final approved revision: `1d3883ac2d83c96cd8bd6e3ad53f8d36775afa33` (application source identical to `3e395e1`; the
+installable `dist/Workday.app` and `evidence/latest/` were built from that source). Later commits change docs only.
