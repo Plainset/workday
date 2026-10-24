@@ -260,6 +260,18 @@ struct ReleaseHardeningTests {
         #expect(reopened.loadSettings().dailyGoalMinutes == 7 * 60 + 30)
     }
 
+    @Test("Restoring an older backup keeps the current launch-at-login choice")
+    func restoreKeepsLoginItemChoice() throws {
+        let (ledger, clock, dir) = try makeLedger(at: date(2026, 10, 23, 18, 0))
+        let backups = BackupManager(store: ledger.store, directory: dir.appendingPathComponent("Backups"))
+        let old = try backups.createBackup(kind: .manual, now: clock.now)   // taken before any choice was recorded
+        try ledger.store.setMeta("login_item_enabled", "0")
+        try ledger.store.setMeta("login_item_bundle_id", "io.github.plainset.workday")
+        try backups.restore(old, now: clock.now.addingTimeInterval(60))
+        #expect(ledger.store.meta("login_item_enabled") == "0")
+        #expect(ledger.store.meta("login_item_bundle_id") == "io.github.plainset.workday")
+    }
+
     @Test("A database from a newer schema is refused, not downgraded")
     func newerSchemaRefused() throws {
         let path = tempDir().appendingPathComponent("w.sqlite").path

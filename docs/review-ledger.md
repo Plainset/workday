@@ -173,3 +173,16 @@ earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
 | C-N1 | low | Test temp cleanup can delete a live parallel run's folder | fixed `9ef63e7` |
 | C-N3 | info | Reopen test uses a second connection, not a closed old-build file | accepted: A's live upgrade test from c2990f9 covers the old-build file; add a binary fixture before the first schema change (noted in `WorkStore.migrate` doc) |
 | B-info | info | Hash token isn't secret; bundle-id upgrade note | token accepted (only opens the calendar); upgrade note fixed `9ef63e7` |
+
+## Phase 1 — cycle 3 — revision `52d1847`
+
+| Reviewer | Verdict | Summary |
+|---|---|---|
+| A functional (52/52; upgrade from c2990f9 identical; custom data dirs never register login item; hand-off observed) | APPROVED | 1 low (A5) |
+| B security & privacy (gitleaks fresh clone 35 commits, identities/paths, code diff) | APPROVED | info (same as A5) |
+| C architecture (52/52; 3 truly parallel runs pass; planted-folder cleanup probe) | APPROVED | info (same as A5) |
+| D release readiness (fresh-clone package; id/version/build 35/universal; CI 40088775991 green) | APPROVED | info (same as A5) |
+
+| ID | Sev | Finding | Resolution |
+|---|---|---|---|
+| A5 | low | Upgrade notes claim the login-item choice is honoured, but pre-1.0 builds never recorded it (re-enabled once); restoring an older backup drops the recorded choice | cycle 4: docs corrected; restore preserves `login_item_*` meta (test) |

@@ -194,13 +194,20 @@ public final class BackupManager {
         // 3. Replace contents. SQLite applies the copy as a single write transaction on the destination.
         let source = try SQLiteDatabase(path: backup.url.path, readOnly: true)
         defer { source.close() }
-        // Notifications already delivered must not fire again after going back in time.
+        // Notifications already delivered must not fire again after going back in time, and the current
+        // launch-at-login choice is a device preference, not history — keep both across the restore.
         let sent = store.notificationRecords()
+        let devicePreferences = ["login_item_enabled", "login_item_bundle_id"].compactMap { key in
+            store.meta(key).map { (key, $0) }
+        }
         do {
             try SQLiteDatabase.copy(from: source, to: store.db)
             for record in sent {
                 try store.db.run("INSERT OR IGNORE INTO notifications_sent(day, kind, sent_at) VALUES(?, ?, ?)",
                                  [.text(record.day), .text(record.kind), .double(record.sentAt)])
+            }
+            for (key, value) in devicePreferences {
+                try store.setMeta(key, value)
             }
             try store.migrate()
             try store.db.execute("PRAGMA journal_mode=WAL")

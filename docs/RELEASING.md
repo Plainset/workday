@@ -73,8 +73,9 @@ in place on launch and a newer schema is refused rather than overwritten. `scrip
 copy first (asking to stop a running timer).
 
 Upgrading from a pre-1.0 build (bundle id `local.workday.tracker`): data is untouched; the login item is
-re-registered once under the new identifier (unless the user had turned it off); notification permission is asked
-again and window positions reset. A stale "Workday" entry may remain in Login Items and can be removed.
+re-registered once under the new identifier — pre-1.0 builds didn't record whether it was switched off, so if you had
+disabled it, switch it off again in Settings → General. Notification permission is asked again and window positions
+reset. A stale "Workday" entry may remain in Login Items and can be removed.
 
 ## Release checklist
 

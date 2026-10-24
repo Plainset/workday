@@ -25,7 +25,8 @@ First public release. Fully offline.
 
 ### Upgrading from a pre-release build
 - The bundle identifier is now `io.github.plainset.workday`. Your work data is untouched. Launch at login is
-  carried over automatically on first launch (remove any stale "Workday" entry in System Settings → General →
-  Login Items); macOS asks for notification permission again and window positions reset once.
+  switched on once under the new identifier — if you had turned it off, turn it off again in Settings → General —
+  and any stale "Workday" entry in System Settings → General → Login Items can be removed. macOS asks for
+  notification permission again and window positions reset once.
 
 [1.0.0]: https://github.com/Plainset/workday/releases/tag/v1.0.0
