@@ -1,9 +1,9 @@
-# scripts/perf.sh — 2026-10-24 11:16, Apple M3, % of one core over 10 s
+# scripts/perf.sh — 2026-10-24 11:48, Apple M3, % of one core over 10 s
 menubar   0.1% CPU     0.0 canvas frames/s   [no window]
-month-idle  10.6% CPU    10.5 canvas frames/s   [on screen]
-month-untouched   0.8% CPU     0.0 canvas frames/s   [on screen]
-month-live  13.8% CPU    21.0 canvas frames/s   [on screen]
-month-live-untouched   7.2% CPU     9.6 canvas frames/s   [on screen]
-month-motion  27.7% CPU    28.6 canvas frames/s   [on screen]
-year-idle   0.7% CPU     0.0 canvas frames/s   [on screen]
-year-motion  13.0% CPU    28.6 canvas frames/s   [on screen]
+month-idle  12.4% CPU    10.6 canvas frames/s   [on screen]
+month-untouched   0.7% CPU     0.0 canvas frames/s   [on screen]
+month-live  14.5% CPU    21.2 canvas frames/s   [on screen]
+month-live-untouched   6.9% CPU     9.6 canvas frames/s   [on screen]
+month-motion  21.6% CPU    28.7 canvas frames/s   [on screen]
+year-idle   0.8% CPU     0.0 canvas frames/s   [on screen]
+year-motion  15.8% CPU    28.5 canvas frames/s   [on screen]

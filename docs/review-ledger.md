@@ -137,23 +137,23 @@ earlier v1 SHAs are mapped in `docs/HISTORY_REWRITE.md`.
 
 | ID | Sev | Finding | Resolution |
 |---|---|---|---|
-| D1 | medium | "Right-click → Open" doesn't work on macOS 15+ (Privacy & Security → Open Anyway) | cycle 2 |
-| D2 / B1 | low-med | SECURITY.md channel needs private vulnerability reporting, unavailable while private; no going-public checklist | cycle 2 |
-| D3 / C4 | low | CFBundleVersion = 1 in CI/release (shallow clone); release workflow doesn't verify universal binary | cycle 2 |
-| D4 / B4 | low | Committed evidence stale (pre-release revision) | cycle 2 |
-| D5 / B6 | low | Bundle ID `local.workday.tracker` not owner namespace | cycle 2: owner chose `io.github.plainset.workday` |
-| D6 | info | CHANGELOG link ref; release notes text | cycle 2 |
-| B2 | low | Distributed notification object exposes the data path (incl. username) to other local processes | cycle 2 |
+| D1 | medium | "Right-click → Open" doesn't work on macOS 15+ (Privacy & Security → Open Anyway) | fixed `1e4f36b` |
+| D2 / B1 | low-med | SECURITY.md channel needs private vulnerability reporting, unavailable while private; no going-public checklist | fixed `1e4f36b` |
+| D3 / C4 | low | CFBundleVersion = 1 in CI/release (shallow clone); release workflow doesn't verify universal binary | fixed `1e4f36b` |
+| D4 / B4 | low | Committed evidence stale (pre-release revision) | fixed `1e4f36b` |
+| D5 / B6 | low | Bundle ID `local.workday.tracker` not owner namespace | fixed `1e4f36b` (owner chose `io.github.plainset.workday`) |
+| D6 | info | CHANGELOG link ref; release notes text | fixed `1e4f36b` |
+| B2 | low | Distributed notification object exposes the data path (incl. username) to other local processes | fixed `1e4f36b` |
 | B3 | info | Local backup branch contains original history | owner action: keep local or move to an off-repo bundle; never `push --all/--mirror` (RELEASING.md) |
-| B5 | info | .gitignore could add `*.p8 *.sqlite3 *.partial` | cycle 2 |
+| B5 | info | .gitignore could add `*.p8 *.sqlite3 *.partial` | fixed `1e4f36b` |
 | B7 | info | Dependency advisory check needed once dependencies exist | Phase 2 |
-| C1 | low | `migrate()` treats an unreadable schema version as 0 and could downgrade the marker | cycle 2 |
-| C2 | low | No v1 fixture/reopen test; migration pattern undocumented | cycle 2 |
-| C3 | low | CLT Testing flags detected differently in Package.swift and test.sh (`DEVELOPER_DIR`) | cycle 2 |
-| C5 | low | install.sh replaces the bundle even if the app didn't quit | cycle 2 |
-| C6 | low | Dead compact branch in `labelledCanvas` | cycle 2 |
-| C7 | low | evidence churn in git; `#` sed delimiter; no `trap` for DMG staging dir | cycle 2 (sed/trap fixed; evidence kept deliberately as review record, regenerated only at review points) |
-| C8 | low | Test temp dirs never cleaned | cycle 2 |
-| A1 | low | Lock file created 0644 | cycle 2 |
-| A2 | low | Backups made by v1 not tightened on upgrade | cycle 2 |
-| A3 | info | `OwnerOnly` chmods an existing `WORKDAY_DATA_DIR` | cycle 2 (documented in CONTRIBUTING) |
+| C1 | low | `migrate()` treats an unreadable schema version as 0 and could downgrade the marker | fixed `1e4f36b` |
+| C2 | low | No v1 fixture/reopen test; migration pattern undocumented | fixed `1e4f36b` |
+| C3 | low | CLT Testing flags detected differently in Package.swift and test.sh (`DEVELOPER_DIR`) | fixed `1e4f36b` |
+| C5 | low | install.sh replaces the bundle even if the app didn't quit | fixed `1e4f36b` |
+| C6 | low | Dead compact branch in `labelledCanvas` | fixed `1e4f36b` |
+| C7 | low | evidence churn in git; `#` sed delimiter; no `trap` for DMG staging dir | fixed `1e4f36b` (sed/trap; evidence kept deliberately as review record, regenerated at review points) |
+| C8 | low | Test temp dirs never cleaned | fixed `1e4f36b` |
+| A1 | low | Lock file created 0644 | fixed `1e4f36b` |
+| A2 | low | Backups made by v1 not tightened on upgrade | fixed `1e4f36b` |
+| A3 | info | `OwnerOnly` chmods an existing `WORKDAY_DATA_DIR` | fixed `1e4f36b` (documented in CONTRIBUTING) |

@@ -1,9 +1,4 @@
-revision: 2449c7f3b9dd16be44bbe859ade52c5f78d72943
- M .gitignore
- M Sources/Workday/AppDelegate.swift
- M Sources/WorkdayCore/BackupManager.swift
- M Sources/WorkdayCore/WorkStore.swift
- M Tests/WorkdayCoreTests/RegressionTests.swift
+revision: 1e4f36bff882690d0dd94be875ceb23a3bca9fcd
  M evidence/latest/REVISION.txt
  D evidence/latest/build.log
  D evidence/latest/environment.txt
@@ -33,7 +28,3 @@ revision: 2449c7f3b9dd16be44bbe859ade52c5f78d72943
  D evidence/latest/snapshots/year-minsize-dark.png
  D evidence/latest/snapshots/year-minsize-light.png
  D evidence/latest/test.log
- M scripts/build_app.sh
- M scripts/collect_evidence.sh
-?? VERSION
-?? scripts/package_release.sh
