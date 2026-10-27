@@ -203,6 +203,13 @@ public final class WorkLedger {
                                       calendar: calendar) { total(for: $0, now: now) }
     }
 
+    /// Total worked in the calendar week (first weekday per the calendar) containing `day`, live session included.
+    public func weekTotal(containing day: DayKey? = nil, now: Date? = nil) -> TimeInterval {
+        let now = now ?? clock()
+        return MonthGridLayout.week(containing: day ?? today(now: now), calendar: calendar)
+            .reduce(0) { $0 + total(for: $1, now: now) }
+    }
+
     public func goalProgress(now: Date? = nil) -> Double {
         let goal = settings.dailyGoalSeconds
         guard goal > 0 else { return 0 }
