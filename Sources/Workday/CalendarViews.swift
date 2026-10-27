@@ -218,6 +218,7 @@ struct SummaryStrip: View {
         let todayTotal = model.displayTodayTotal
 
         return HStack(spacing: 22) {
+            stat("This week", DurationFormat.short(ledger.weekTotal(now: now)))
             stat(mode == .month ? "This month" : "This year", DurationFormat.short(total))
             stat("Goal days", "\(goalDays)")
             stat("Streak", streak == 0 ? "—" : "\(streak) day\(streak == 1 ? "" : "s")", icon: streak > 0 ? "flame.fill" : nil)
@@ -227,6 +228,8 @@ struct SummaryStrip: View {
                 Text("Today \(DurationFormat.short(todayTotal)) of \(DurationFormat.goal(minutes: ledger.settings.dailyGoalMinutes))")
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 ProgressLine(progress: model.displayGoalProgress, height: 5)
                     .frame(width: 180)
             }

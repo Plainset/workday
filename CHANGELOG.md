@@ -3,6 +3,11 @@
 All notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- "This week" total in the calendar summary (current week, starting on your Mac's first weekday).
+
 ## [1.0.0] — 2026-10-24
 
 First public release. Fully offline.

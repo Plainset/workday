@@ -132,6 +132,12 @@ public enum MonthGridLayout {
         return (weekday - calendar.firstWeekday + 7) % 7
     }
 
+    /// The seven days of the calendar week containing `day`, starting on `calendar.firstWeekday`.
+    public static func week(containing day: DayKey, calendar: Calendar) -> [DayKey] {
+        let start = day.adding(days: -column(of: day, calendar: calendar), calendar: calendar)
+        return (0..<7).map { start.adding(days: $0, calendar: calendar) }
+    }
+
     /// Builds the grid cells for a month. Leading/trailing cells are adjacent-month days.
     /// - Parameter fixedSixRows: always emit 42 cells (stable layout when navigating).
     public static func cells(for month: MonthKey, calendar: Calendar, fixedSixRows: Bool = false) -> [MonthGridCell] {

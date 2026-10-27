@@ -32,6 +32,25 @@ struct GoalTests {
         #expect(summary.workedDays == 5)
     }
 
+    @Test("This week: current calendar week from the first weekday, including the live session")
+    func weekTotal() throws {
+        // Friday 23 Oct 2026; Monday-first calendar → week is Mon 19 – Sun 25 Oct.
+        let (ledger, clock, _) = try makeLedger(at: date(2026, 10, 23, 10, 0))
+        try ledger.addSession(start: date(2026, 10, 18, 9), end: date(2026, 10, 18, 17))      // Sun before: excluded
+        try ledger.addSession(start: date(2026, 10, 19, 9), end: date(2026, 10, 19, 12))      // Mon: 3h
+        try ledger.addSession(start: date(2026, 10, 18, 23), end: date(2026, 10, 19, 1))      // crosses into Mon: +1h
+        try ledger.addSession(start: date(2026, 10, 22, 9), end: date(2026, 10, 22, 11))      // Thu: 2h
+        try ledger.start()
+        clock.advance(3600)                                                                   // live: 1h today
+        #expect(ledger.weekTotal() == 7 * 3600)
+        #expect(MonthGridLayout.week(containing: DayKey(year: 2026, month: 10, day: 23), calendar: calendar()).first
+                == DayKey(year: 2026, month: 10, day: 19))
+        var sundayFirst = calendar()
+        sundayFirst.firstWeekday = 1
+        #expect(MonthGridLayout.week(containing: DayKey(year: 2026, month: 10, day: 23), calendar: sundayFirst).first
+                == DayKey(year: 2026, month: 10, day: 18))
+    }
+
     @Test("Missed completed day breaks the streak; settings persist and are clamped")
     func streakBreak() throws {
         let (ledger, _, dir) = try makeLedger(at: date(2026, 10, 23, 10, 0))
