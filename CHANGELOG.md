@@ -8,6 +8,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Added
 - "This week" total in the calendar summary (current week, starting on your Mac's first weekday).
 
+### Changed
+- Lower memory use: closed windows and the menu bar popover are now released completely, the running day redraws only
+  its own tile, and freed memory is returned to macOS. Includes a `--memtest` harness for leak checks.
+
 ## [1.0.0] — 2026-10-24
 
 First public release. Fully offline.

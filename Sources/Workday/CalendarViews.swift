@@ -324,8 +324,18 @@ struct MonthGridView: View {
                     LiquidLayer(cells: liquidCells.filter { !$0.live }, motion: motion, cadence: cadence) { cell, submerged in
                         DayTileLabels(info: info(cell.key), submerged: submerged)
                     }
-                    LiquidLayer(cells: liquidCells.filter { $0.live }, motion: motion, cadence: cadence) { cell, submerged in
-                        DayTileLabels(info: info(cell.key), submerged: submerged)
+                    // The running day gets a layer sized to its own tile (plus room for the overflow glow), so its
+                    // frequent frames neither redraw nor keep a backing store for the whole grid.
+                    ForEach(liquidCells.filter { $0.live }, id: \.key) { cell in
+                        let frame = cell.rect.insetBy(dx: -8, dy: -8)
+                        let local = LiquidCell(key: cell.key, rect: cell.rect.offsetBy(dx: -frame.minX, dy: -frame.minY),
+                                               cornerRadius: cell.cornerRadius, seconds: cell.seconds,
+                                               dimmed: cell.dimmed, live: true)
+                        LiquidLayer(cells: [local], motion: motion, cadence: cadence) { c, submerged in
+                            DayTileLabels(info: info(c.key), submerged: submerged)
+                        }
+                        .frame(width: frame.width, height: frame.height)
+                        .offset(x: frame.minX, y: frame.minY)
                     }
                     ForEach(cells) { c in
                         let r = rect(c)
