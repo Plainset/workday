@@ -78,6 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             SnapshotRenderer.perf(model: model)
             return
         }
+        if CommandLine.arguments.contains("--memtest") && WorkdayPaths.usesCustomDataDirectory {
+            AppDelegate.quietWindows = true
+            SnapshotRenderer.memoryTest(delegate: self, model: model)
+            return
+        }
         model.launchAtLogin.refresh()
         firstLaunchSetup()
         Task {
@@ -318,6 +323,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         recoveryWindow?.makeKeyAndOrderFront(nil)
     }
 
+    /// Closes the calendar and settings windows (memory test).
+    func closeWindowsForTest() {
+        calendarWindow?.close()
+        settingsWindow?.close()
+    }
+
     func closeRecovery() {
         recoveryWindow?.close()
     }
@@ -345,7 +356,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return window
     }
 
+    /// Memory-test harness only: windows open nearly transparent and click-through, without activating the app.
+    static var quietWindows = false
+
     private func present(_ window: NSWindow) {
+        if Self.quietWindows {
+            window.alphaValue = 0.03
+            window.ignoresMouseEvents = true
+            window.orderFrontRegardless()
+            if window === calendarWindow { model.calendarVisible = true }
+            return
+        }
         updateDockPolicy(opening: true)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -354,6 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// Dock icon is visible only while the calendar or settings window is open.
     private func updateDockPolicy(opening: Bool = false) {
+        guard !Self.quietWindows else { return }
         let visible = [calendarWindow, settingsWindow].contains { $0?.isVisible == true }
         let wanted: NSApplication.ActivationPolicy = (opening || visible) ? .regular : .accessory
         if NSApp.activationPolicy() != wanted {
@@ -366,7 +388,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard let window = notification.object as? NSWindow else { return }
         if window === calendarWindow { model.calendarVisible = false }
         DispatchQueue.main.async { [weak self] in
-            self?.updateDockPolicy()
+            guard let self else { return }
+            // Release closed windows entirely (SwiftUI view tree, layers, cached drawing): a menu-bar app should
+            // return to its small idle footprint. They are rebuilt on next open; frames are autosaved.
+            if window === self.calendarWindow { self.calendarWindow = nil }
+            if window === self.settingsWindow { self.settingsWindow = nil }
+            if window === self.recoveryWindow { self.recoveryWindow = nil }
+            window.contentViewController = nil
+            window.delegate = nil
+            self.updateDockPolicy()
+            self.returnFreedMemorySoon()
+        }
+    }
+
+    /// Hands memory freed by closed windows/popovers back to the system once their teardown has finished, so the
+    /// idle footprint returns to its baseline instead of keeping freed pages parked in the allocator.
+    func returnFreedMemorySoon() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            malloc_zone_pressure_relief(nil, 0)
         }
     }
 

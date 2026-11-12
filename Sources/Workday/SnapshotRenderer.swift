@@ -209,6 +209,60 @@ enum SnapshotRenderer {
         }
     }
 
+    /// Physical footprint (what Activity Monitor shows as "Memory").
+    static func physicalFootprint() -> Int {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return kr == KERN_SUCCESS ? Int(info.phys_footprint) : -1
+    }
+
+    /// `WORKDAY_DATA_DIR=<scratch> Workday --seed-demo --memtest [cycles]`: runs the timer, then repeatedly opens
+    /// the calendar and settings windows and closes them again, printing the
+    /// physical footprint so growth across cycles (a leak) is visible. Windows are nearly transparent and
+    /// click-through; the app is never activated. Prints results and quits.
+    static func memoryTest(delegate: AppDelegate, model: AppModel) {
+        let cycles = Int(CommandLine.arguments.drop { $0 != "--memtest" }.dropFirst().first ?? "") ?? 40
+        model.start()
+        var samples: [(String, Int)] = [("start", physicalFootprint())]
+        func mb(_ b: Int) -> String { String(format: "%.1f MB", Double(b) / 1_048_576) }
+        func cycle(_ i: Int) {
+            guard i < cycles else {
+                // Idle with the timer running and nothing open.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+                    samples.append(("idle 20 s after cycles", physicalFootprint()))
+                    model.stop()
+                    print("Workday memory test (\(cycles) cycles):")
+                    for (label, bytes) in samples { print("  \(label): \(mb(bytes))") }
+                    if CommandLine.arguments.contains("--hold") {
+                        print("holding for external inspection (pid \(ProcessInfo.processInfo.processIdentifier))")
+                        fflush(stdout)
+                        return
+                    }
+                    NSApp.terminate(nil)
+                }
+                return
+            }
+            delegate.showCalendar()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                delegate.showSettings()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    delegate.closeWindowsForTest()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        if i == 0 || (i + 1) % 10 == 0 { samples.append(("after cycle \(i + 1)", physicalFootprint())) }
+                        cycle(i + 1)
+                    }
+                }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            samples.append(("settled (menu bar only)", physicalFootprint()))
+            cycle(0)
+        }
+    }
+
     final class BenchClock: ObservableObject { @Published var t: Double = 0 }
 
     struct BenchView: View {

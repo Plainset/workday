@@ -113,5 +113,6 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         model.popoverVisible = false
         popover.contentViewController = nil
+        AppDelegate.shared?.returnFreedMemorySoon()
     }
 }
