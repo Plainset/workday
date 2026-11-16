@@ -425,6 +425,33 @@ struct SyncTests {
         #expect(throws: SyncError.folderMissing) { try a.engine.sync(folder: missing, deviceName: "x") }
     }
 
+    @Test("Links in the sync folder are never followed for reading, writing or deleting")
+    func symlinksRefused() throws {
+        let (a, _) = try pair()
+        try a.ledger.addSession(start: date(2026, 11, 16, 6), end: date(2026, 11, 16, 7))
+        // A peer whose log is a link to a file elsewhere is not read.
+        let outside = tempDir()
+        let secret = outside.appendingPathComponent("secret.jsonl")
+        let peer = UUID().uuidString
+        let s = WorkSession(start: date(2026, 11, 1, 9), end: date(2026, 11, 1, 10), state: .closed,
+                            createdAt: date(2026, 11, 1, 10), ownerDevice: peer)
+        try line(.session(s, hlc: HybridTimestamp(wall: 1, counter: 0, device: peer)), seq: 1).write(to: secret)
+        try writePeer(a.folder, device: peer, epoch: UUID().uuidString, seq: 1, files: [:])
+        let peerDir = SyncEngine.syncRoot(in: a.folder).appendingPathComponent("devices/\(peer)")
+        try FileManager.default.createSymbolicLink(at: peerDir.appendingPathComponent("log-000000000001.jsonl"), withDestinationURL: secret)
+        try a.sync()
+        #expect(a.ledger.sessions.count == 1)
+
+        // This Mac's own folder replaced by a link: refused, and nothing outside is touched.
+        let mine = SyncEngine.syncRoot(in: a.folder).appendingPathComponent("devices/\(a.id)")
+        try FileManager.default.removeItem(at: mine)
+        let victim = tempDir()
+        try Data("keep".utf8).write(to: victim.appendingPathComponent("log-000000000001.jsonl"))
+        try FileManager.default.createSymbolicLink(at: mine, withDestinationURL: victim)
+        #expect(throws: SyncError.self) { try a.sync() }
+        #expect(FileManager.default.fileExists(atPath: victim.appendingPathComponent("log-000000000001.jsonl").path))
+    }
+
     @Test("A placeholder that iCloud hasn't downloaded yet is waited for, not skipped")
     func placeholderWaits() throws {
         let (a, _) = try pair()

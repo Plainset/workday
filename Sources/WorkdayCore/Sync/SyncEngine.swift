@@ -85,7 +85,14 @@ public final class SyncEngine {
         let root = Self.syncRoot(in: folder)
         let devices = root.appendingPathComponent("devices", isDirectory: true)
         let mine = devices.appendingPathComponent(me, isDirectory: true)
+        // Everything under the sync folder is untrusted: refuse links that could redirect writes or deletes.
+        for dir in [root, devices, mine] where Self.isSymbolicLink(dir) {
+            throw SyncError.notWritable("“\(dir.lastPathComponent)” is a link, not a folder")
+        }
         do { try OwnerOnly.createDirectory(at: mine) } catch { throw SyncError.notWritable(error.localizedDescription) }
+        guard Self.isRealDirectory(root), Self.isRealDirectory(devices), Self.isRealDirectory(mine) else {
+            throw SyncError.notWritable("the sync folder isn't a normal folder")
+        }
         OwnerOnly.restrictDirectory(root)
         OwnerOnly.restrictDirectory(devices)
 
@@ -101,8 +108,9 @@ public final class SyncEngine {
         let bootstrap = store.meta("sync_bound_folder") != root.path || !hasDeviceFile
         let peerIDs = peerFolders(in: devices, excluding: me)
         if bootstrap {
-            for url in (try? fm.contentsOfDirectory(at: mine, includingPropertiesForKeys: nil)) ?? [] {
-                try? fm.removeItem(at: url)
+            // Only this engine's own files (a stale log from an earlier life of this device's folder).
+            for name in (try? fm.contentsOfDirectory(atPath: mine.path)) ?? [] where Self.isOwnFileName(name) {
+                try? fm.removeItem(at: mine.appendingPathComponent(name))
             }
             try store.db.transaction {
                 try store.db.run("DELETE FROM meta WHERE key LIKE 'sync_cursor_%'")
@@ -311,7 +319,8 @@ public final class SyncEngine {
 
     private func peerFolders(in devices: URL, excluding me: String) -> [String] {
         let names = (try? fm.contentsOfDirectory(atPath: devices.path)) ?? []
-        return names.filter { $0 != me && SyncValidation.isDeviceID($0) }.sorted()
+        return names.filter { $0 != me && SyncValidation.isDeviceID($0)
+            && Self.isRealDirectory(devices.appendingPathComponent($0)) }.sorted()
     }
 
     /// Imports one peer's new records. Returns true if local data changed.
@@ -483,16 +492,39 @@ public final class SyncEngine {
         try? fm.startDownloadingUbiquitousItem(at: url)
     }
 
-    /// Reads a bounded file, asking iCloud to download it if only a placeholder is present.
+    /// Reads a bounded regular file (never through a link), asking iCloud to download it if only a
+    /// placeholder is present.
     private func readBounded(_ url: URL) -> Data? {
         let placeholder = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).icloud")
-        if !fm.fileExists(atPath: url.path) {
-            if fm.fileExists(atPath: placeholder.path) { requestDownload(url) }
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else {
+            if errno == ENOENT, fm.fileExists(atPath: placeholder.path) { requestDownload(url) }
             return nil
         }
-        guard let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue,
-              size <= SyncValidation.maximumFileBytes else { return nil }
-        return try? Data(contentsOf: url, options: .uncached)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_size <= off_t(SyncValidation.maximumFileBytes) else { return nil }
+        guard let data = try? handle.read(upToCount: SyncValidation.maximumFileBytes + 1),
+              data.count <= SyncValidation.maximumFileBytes else { return nil }
+        return data
+    }
+
+    nonisolated static func isSymbolicLink(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK
+    }
+
+    nonisolated static func isRealDirectory(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
+    }
+
+    /// Names this engine writes in its own device folder.
+    nonisolated static func isOwnFileName(_ name: String) -> Bool {
+        name == "device.json" || name == "snapshot.json" || name.hasPrefix(".tmp-")
+            || (name.hasPrefix("log-") && name.hasSuffix(".jsonl"))
+            || (name.hasPrefix(".") && name.hasSuffix(".icloud"))
     }
 
     struct Lines {

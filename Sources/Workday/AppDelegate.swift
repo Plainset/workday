@@ -73,6 +73,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         observeSystem()
         startTimers()
         timerStateChanged()
+        model.sync.onChange = { [weak self] _ in self?.model.syncApplied() }
+        model.sync.start()
+        if CommandLine.arguments.contains("--e2e-control") && WorkdayPaths.usesCustomDataDirectory {
+            E2EControl.start(model: model)
+        }
 
         if CommandLine.arguments.contains("--perf") && WorkdayPaths.usesCustomDataDirectory {
             SnapshotRenderer.perf(model: model)
@@ -202,6 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 self.model.ledger.setCalendar(.autoupdatingCurrent)
                 self.displayTick()
                 self.model.runAutomaticBackup()
+                self.model.sync.syncNow()
             }
         }
         ws.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
