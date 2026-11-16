@@ -22,11 +22,14 @@ public struct SyncReport: Equatable, Sendable {
 public enum SyncError: LocalizedError, Equatable {
     case folderMissing
     case notWritable(String)
+    case accessDenied
 
     public var errorDescription: String? {
         switch self {
         case .folderMissing:
             return "The sync folder can't be found. If you use iCloud Drive, check that iCloud Drive is turned on in System Settings → your name → iCloud, or choose another folder."
+        case .accessDenied:
+            return "macOS hasn't allowed Workday to open the sync folder. Choose the folder again in Settings → Sync, or allow Workday under System Settings → Privacy & Security → Files and Folders, then sync again."
         case .notWritable(let detail):
             return "Workday can't write to the sync folder (\(detail)). Check that the folder still exists and that you have permission to change it."
         }
@@ -89,7 +92,9 @@ public final class SyncEngine {
         for dir in [root, devices, mine] where Self.isSymbolicLink(dir) {
             throw SyncError.notWritable("“\(dir.lastPathComponent)” is a link, not a folder")
         }
-        do { try OwnerOnly.createDirectory(at: mine) } catch { throw SyncError.notWritable(error.localizedDescription) }
+        do { try OwnerOnly.createDirectory(at: mine) } catch { throw Self.mapped(error) }
+        // Listing must work: a privacy refusal would otherwise look like "no other Macs".
+        do { _ = try fm.contentsOfDirectory(atPath: devices.path) } catch { throw Self.mapped(error) }
         guard Self.isRealDirectory(root), Self.isRealDirectory(devices), Self.isRealDirectory(mine) else {
             throw SyncError.notWritable("the sync folder isn't a normal folder")
         }
@@ -508,6 +513,17 @@ public final class SyncEngine {
         guard let data = try? handle.read(upToCount: SyncValidation.maximumFileBytes + 1),
               data.count <= SyncValidation.maximumFileBytes else { return nil }
         return data
+    }
+
+    /// Turns a file error into a plain-language sync error.
+    nonisolated static func mapped(_ error: Error) -> SyncError {
+        let ns = error as NSError
+        let posix = (ns.userInfo[NSUnderlyingErrorKey] as? NSError).flatMap { $0.domain == NSPOSIXErrorDomain ? $0.code : nil }
+        if ns.code == NSFileReadNoPermissionError || ns.code == NSFileWriteNoPermissionError
+            || posix == Int(EPERM) || posix == Int(EACCES) {
+            return .accessDenied
+        }
+        return .notWritable(ns.localizedDescription)
     }
 
     nonisolated static func isSymbolicLink(_ url: URL) -> Bool {

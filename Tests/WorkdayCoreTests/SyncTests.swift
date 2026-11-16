@@ -449,6 +449,13 @@ struct SyncTests {
         for file in try FileManager.default.contentsOfDirectory(atPath: mine.path) {
             #expect(try perms(mine.appendingPathComponent(file).path) == 0o600)
         }
+        // A folder this Mac may not read is reported as a permission problem, not as "no other Macs".
+        let locked = tempDir()
+        try FileManager.default.createDirectory(at: SyncEngine.syncRoot(in: locked).appendingPathComponent("devices"), withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: SyncEngine.syncRoot(in: locked).path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: SyncEngine.syncRoot(in: locked).path) }
+        #expect(throws: SyncError.accessDenied) { try a.engine.sync(folder: locked, deviceName: "x") }
+
         let missing = a.folder.appendingPathComponent("nope")
         #expect(throws: SyncError.folderMissing) { try a.engine.sync(folder: missing, deviceName: "x") }
     }
