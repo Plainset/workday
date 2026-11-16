@@ -475,6 +475,20 @@ struct SyncTests {
         #expect(content(a.ledger) == content(b.ledger))
     }
 
+    @Test("A peer's maximal clock counter can't push this Mac's clock past what can be parsed")
+    func clockCounterCarries() throws {
+        let me = UUID().uuidString
+        let peer = UUID().uuidString
+        let now = date(2026, 11, 16, 9)
+        var clock = HybridClock(device: me, last: nil)
+        let wall = HybridTimestamp.milliseconds(now) + 5000
+        clock.observe(HybridTimestamp(wall: wall, counter: HybridTimestamp.maximumCounter, device: peer))
+        let next = clock.tick(now: now)
+        #expect(next.wall == wall + 1 && next.counter == 0)
+        #expect(HybridTimestamp(next.description) == next)
+        #expect(next > HybridTimestamp(wall: wall, counter: HybridTimestamp.maximumCounter, device: peer))
+    }
+
     @Test("Hostile sequence numbers are rejected without crashing, on every later pass too")
     func hostileSequenceNumbers() throws {
         let (a, _) = try pair()

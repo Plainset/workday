@@ -34,6 +34,9 @@ public struct HybridTimestamp: Comparable, Hashable, Sendable, CustomStringConve
         self.init(wall: wall, counter: counter, device: String(parts[2]))
     }
 
+    /// Largest counter the six-digit text form holds.
+    public static let maximumCounter: Int64 = 999_999
+
     public static func milliseconds(_ date: Date) -> Int64 {
         Int64((date.timeIntervalSince1970 * 1000).rounded(.down))
     }
@@ -55,8 +58,12 @@ public struct HybridClock: Sendable {
         let wall = HybridTimestamp.milliseconds(now)
         if wall > last.wall {
             last = HybridTimestamp(wall: wall, counter: 0, device: device)
-        } else {
+        } else if last.counter < HybridTimestamp.maximumCounter {
             last = HybridTimestamp(wall: last.wall, counter: last.counter + 1, device: device)
+        } else {
+            // The counter has six digits in the text form: carry into the next millisecond instead of growing
+            // (a peer could otherwise push it past what any Mac can parse).
+            last = HybridTimestamp(wall: last.wall + 1, counter: 0, device: device)
         }
         return last
     }
