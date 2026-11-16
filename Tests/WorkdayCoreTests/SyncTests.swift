@@ -466,7 +466,7 @@ struct SyncTests {
         try converge(a, b)
         b.clock.advance(60)
         try b.ledger.mergeOverlap(m2.id, m1.id)
-        a.clock.advance(120)
+        a.clock.advance(600)                      // clearly later than B's decision (equal times tie by device)
         try a.ledger.mergeOverlap(m1.id, m2.id)   // later decision
         try converge(a, b)
         let day = DayKey(date(2026, 11, 14, 12), calendar: calendar())
