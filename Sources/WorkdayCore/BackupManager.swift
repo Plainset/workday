@@ -197,19 +197,28 @@ public final class BackupManager {
         // Notifications already delivered must not fire again after going back in time, and the current
         // launch-at-login choice is a device preference, not history — keep both across the restore.
         let sent = store.notificationRecords()
-        let devicePreferences = ["login_item_enabled", "login_item_bundle_id"].compactMap { key in
+        var devicePreferences = ["login_item_enabled", "login_item_bundle_id", "device_id"].compactMap { key in
             store.meta(key).map { (key, $0) }
         }
+        // Sync bookkeeping describes this Mac's place in the sync folder, not history: keep it, so the restored
+        // state is published to other Macs as new edits instead of being silently overwritten by them.
+        try? store.db.query("SELECT key, value FROM meta WHERE key LIKE 'sync_%'") { devicePreferences.append(($0.text(0), $0.text(1))) }
+        let syncVersions = (try? store.loadSyncVersions()) ?? [:]
         do {
             try SQLiteDatabase.copy(from: source, to: store.db)
             for record in sent {
                 try store.db.run("INSERT OR IGNORE INTO notifications_sent(day, kind, sent_at) VALUES(?, ?, ?)",
                                  [.text(record.day), .text(record.kind), .double(record.sentAt)])
             }
+            try store.db.run("DELETE FROM meta WHERE key LIKE 'sync_%'")
             for (key, value) in devicePreferences {
                 try store.setMeta(key, value)
             }
             try store.migrate()
+            try store.db.run("DELETE FROM sync_versions")
+            for (key, version) in syncVersions {
+                try store.setSyncVersion(key, version)
+            }
             try store.db.execute("PRAGMA journal_mode=WAL")
             try store.logEvent("restore", sessionID: nil, at: now, detail: backup.url.lastPathComponent)
             try store.bumpRevision()
@@ -231,6 +240,11 @@ public enum OwnerOnly {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         // Also tighten a directory created by an earlier version.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+
+    /// Tightens an existing directory (for example one in the sync folder) to owner-only.
+    public static func restrictDirectory(_ url: URL) {
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
     }
 

@@ -52,6 +52,10 @@ public struct WorkSession: Identifiable, Equatable, Codable, Sendable {
     public var timeZoneID: String
     public var createdAt: Date
     public var updatedAt: Date
+    /// The device (`WorkStore.deviceID`) that recorded this session. Only that device may treat an active
+    /// session as its own running timer or turn it into an interruption. Empty means "this device"
+    /// (filled in when the session is stored).
+    public var ownerDevice: String
 
     public init(id: UUID = UUID(),
                 start: Date,
@@ -62,7 +66,8 @@ public struct WorkSession: Identifiable, Equatable, Codable, Sendable {
                 detectedAt: Date? = nil,
                 timeZoneID: String = TimeZone.current.identifier,
                 createdAt: Date = Date(),
-                updatedAt: Date = Date()) {
+                updatedAt: Date = Date(),
+                ownerDevice: String = "") {
         self.id = id
         self.start = start
         self.end = end
@@ -73,6 +78,7 @@ public struct WorkSession: Identifiable, Equatable, Codable, Sendable {
         self.timeZoneID = timeZoneID
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.ownerDevice = ownerDevice
     }
 
     /// End of the portion that counts as confirmed work at `now`.

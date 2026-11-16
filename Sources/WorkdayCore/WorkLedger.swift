@@ -14,6 +14,8 @@ public enum LedgerError: LocalizedError, Equatable {
     case recoveryPendingForSession
     case storage(String)
     case clockWentBackwards
+    case runningOnOtherMac
+    case overlapNeedsStoppedSessions
 
     public var errorDescription: String? {
         switch self {
@@ -39,6 +41,10 @@ public enum LedgerError: LocalizedError, Equatable {
             return "The change could not be saved: \(m)"
         case .clockWentBackwards:
             return "Your Mac's clock is now earlier than when this session started, so it can't be stopped safely. Check Date & Time in System Settings, then stop the timer again. Nothing has been lost."
+        case .runningOnOtherMac:
+            return "The timer is already running on your other Mac. Stop it there and start here, or leave it running there."
+        case .overlapNeedsStoppedSessions:
+            return "Stop the timer and resolve any interruption first; only finished sessions can be kept or merged."
         }
     }
 }
@@ -92,6 +98,9 @@ public final class WorkLedger {
     @ObservationIgnored private var settledTotals: [DayKey: TimeInterval] = [:]
     /// Pending (unresolved) gap seconds per day.
     @ObservationIgnored private var pendingTotals: [DayKey: TimeInterval] = [:]
+    /// The settled intervals after merging overlaps (sorted, disjoint). Used to add a running session's live
+    /// time without counting any minute twice.
+    @ObservationIgnored private var settledUnion: [(start: Date, end: Date)] = []
 
     public private(set) var calendar: Calendar
     @ObservationIgnored public let store: WorkStore
@@ -131,30 +140,78 @@ public final class WorkLedger {
         for s in sessions where s.state != .active {
             let e = s.confirmedEnd(now: s.start)
             if e > s.start { settled.append((s.start, e)) }
-            if let gap = s.pendingGap { pending.append((gap.start, gap.end)) }
+            if let gap = s.pendingGap, isLocal(s) { pending.append((gap.start, gap.end)) }
         }
-        settledTotals = TimeMath.dailyTotals(settled, calendar: calendar)
-        pendingTotals = TimeMath.dailyTotals(pending, calendar: calendar)
+        // Sessions merged in from another Mac may overlap (see `overlapConflicts`). Until the owner resolves
+        // them, totals count the union of the overlapping time, never the same minute twice.
+        settledUnion = Self.union(settled)
+        settledTotals = TimeMath.dailyTotals(settledUnion, calendar: calendar)
+        pendingTotals = TimeMath.dailyTotals(Self.union(pending), calendar: calendar)
         revision += 1
+    }
+
+    /// Sorted, disjoint union of intervals.
+    static func union(_ intervals: [(start: Date, end: Date)]) -> [(start: Date, end: Date)] {
+        var result: [(start: Date, end: Date)] = []
+        for i in intervals.sorted(by: { $0.start < $1.start }) where i.end > i.start {
+            if let last = result.last, i.start <= last.end {
+                result[result.count - 1].end = max(last.end, i.end)
+            } else {
+                result.append(i)
+            }
+        }
+        return result
+    }
+
+    // MARK: Device ownership
+
+    /// This installation's device identifier (see `WorkStore.deviceID`).
+    public var deviceID: String { store.deviceID }
+
+    /// Whether `session` was recorded by this Mac (only those can be this Mac's running timer or recovery).
+    public func isLocal(_ session: WorkSession) -> Bool {
+        session.ownerDevice.isEmpty || session.ownerDevice == store.deviceID
     }
 
     // MARK: Queries (the single source of totals)
 
-    public var activeSession: WorkSession? { sessions.first { $0.state == .active } }
+    /// This Mac's running session.
+    public var activeSession: WorkSession? { sessions.first { $0.state == .active && isLocal($0) } }
     public var isRunning: Bool { activeSession != nil }
-    public var pendingRecoveries: [WorkSession] { sessions.filter { $0.state == .interrupted } }
-    public var hasPendingRecovery: Bool { sessions.contains { $0.state == .interrupted } }
+    /// Sessions running on another Mac (synced).
+    public var remoteActiveSessions: [WorkSession] { sessions.filter { $0.state == .active && !isLocal($0) } }
+    /// Interruptions this Mac must decide about. Another Mac's interruptions are resolved on that Mac.
+    public var pendingRecoveries: [WorkSession] { sessions.filter { $0.state == .interrupted && isLocal($0) } }
+    public var hasPendingRecovery: Bool { sessions.contains { $0.state == .interrupted && isLocal($0) } }
 
     public func today(now: Date? = nil) -> DayKey { DayKey(now ?? clock(), calendar: calendar) }
 
     /// Confirmed seconds worked on `day`, including the live portion of a running session.
     public func total(for day: DayKey, now: Date? = nil) -> TimeInterval {
         let now = now ?? clock()
-        var t = settledTotals[day] ?? 0
-        if let active = activeSession, now > active.start {
-            t += TimeMath.seconds(of: active.start, now, on: day, calendar: calendar)
+        return (settledTotals[day] ?? 0) + liveSeconds(on: day, now: now)
+    }
+
+    /// Seconds that running sessions (on any Mac) add to `day`, excluding time already counted by settled
+    /// sessions and counting time shared by two running sessions once.
+    private func liveSeconds(on day: DayKey, now: Date) -> TimeInterval {
+        let running = sessions.filter { $0.state == .active && now > $0.start }
+        guard !running.isEmpty else { return 0 }
+        let dayStart = day.startDate(in: calendar)
+        let dayEnd = day.endDate(in: calendar)
+        var total: TimeInterval = 0
+        for live in Self.union(running.map { ($0.start, now) }) {
+            let start = max(live.start, dayStart)
+            let end = min(live.end, dayEnd)
+            guard end > start else { continue }
+            var seconds = end.timeIntervalSince(start)
+            for settled in settledUnion where settled.end > start {
+                if settled.start >= end { break }
+                seconds -= min(settled.end, end).timeIntervalSince(max(settled.start, start))
+            }
+            total += max(0, seconds)
         }
-        return t
+        return total
     }
 
     /// Pending (unresolved recovery gap) seconds on `day`. Never included in `total`.
@@ -218,17 +275,62 @@ public final class WorkLedger {
 
     // MARK: Timer
 
+    /// Elapsed time of a running session on another Mac.
+    public func elapsed(of session: WorkSession, now: Date? = nil) -> TimeInterval {
+        max(0, (now ?? clock()).timeIntervalSince(session.start))
+    }
+
     /// Starts the timer. Idempotent: if already running, returns the running session unchanged.
+    /// Throws `.runningOnOtherMac` while a synced session is running on another Mac.
     @discardableResult
     public func start() throws -> WorkSession {
         if let active = activeSession { return active }
+        if !remoteActiveSessions.isEmpty { throw LedgerError.runningOnOtherMac }
         let now = clock()
         if let conflict = conflicting(start: now, end: nil, excluding: []) {
             throw LedgerError.overlaps(description: describe(conflict))
         }
         let session = WorkSession(start: now, end: nil, state: .active, checkpoint: now, checkpointKind: .start,
-                                  timeZoneID: calendar.timeZone.identifier, createdAt: now, updatedAt: now)
+                                  timeZoneID: calendar.timeZone.identifier, createdAt: now, updatedAt: now,
+                                  ownerDevice: deviceID)
         try persist {
+            try store.upsert(session)
+            try store.logEvent("start", sessionID: session.id, at: now)
+        }
+        return session
+    }
+
+    /// "Stop it there and start here": ends the session running on another Mac at this moment and starts
+    /// the timer on this Mac. The edit reaches the other Mac through sync, which then stops its timer.
+    @discardableResult
+    public func stopRemoteAndStart(remoteID: UUID) throws -> WorkSession {
+        guard let remote = sessions.first(where: { $0.id == remoteID }), remote.state == .active, !isLocal(remote) else {
+            throw LedgerError.sessionNotFound
+        }
+        if let active = activeSession { return active }
+        let now = clock()
+        if now < remote.start { throw LedgerError.clockWentBackwards }
+        let others = Set(remoteActiveSessions.map(\.id))
+        if let conflict = conflicting(start: now, end: nil, excluding: others) {
+            throw LedgerError.overlaps(description: describe(conflict))
+        }
+        let session = WorkSession(start: now, end: nil, state: .active, checkpoint: now, checkpointKind: .start,
+                                  timeZoneID: calendar.timeZone.identifier, createdAt: now, updatedAt: now,
+                                  ownerDevice: deviceID)
+        try persist {
+            for id in others {
+                guard var other = try store.session(id: id), other.state == .active else { continue }
+                if now.timeIntervalSince(other.start) < 1 {
+                    try store.deleteSession(id: id)
+                } else {
+                    other.end = now
+                    other.state = .closed
+                    other.checkpoint = now
+                    other.updatedAt = now
+                    try store.upsert(other)
+                }
+                try store.logEvent("stop-remote", sessionID: id, at: now)
+            }
             try store.upsert(session)
             try store.logEvent("start", sessionID: session.id, at: now)
         }
@@ -290,7 +392,8 @@ public final class WorkLedger {
         let launch = launchTime ?? clock()
         var found: [WorkSession] = []
         try persist {
-            for var s in try store.loadSessions() where s.state == .active {
+            // Only this Mac's sessions: a session running on another Mac never has a local heartbeat here.
+            for var s in try store.loadSessions() where s.state == .active && isLocal(s) {
                 s.state = .interrupted
                 s.detectedAt = max(launch, s.checkpoint, s.start)
                 s.updatedAt = launch
@@ -380,7 +483,8 @@ public final class WorkLedger {
             }
             for (i, piece) in outcome.pieces.enumerated() {
                 var s = i == 0 ? fresh : WorkSession(start: piece.start, end: nil, state: .closed,
-                                                    timeZoneID: fresh.timeZoneID, createdAt: now, updatedAt: now)
+                                                    timeZoneID: fresh.timeZoneID, createdAt: now, updatedAt: now,
+                                                    ownerDevice: deviceID)
                 s.start = piece.start
                 s.end = piece.end
                 s.state = piece.end == nil ? .active : .closed
@@ -430,7 +534,8 @@ public final class WorkLedger {
         try validate(start: start, end: end)
         let now = clock()
         let s = WorkSession(start: start, end: end, state: .closed, checkpoint: end, checkpointKind: .heartbeat,
-                            timeZoneID: calendar.timeZone.identifier, createdAt: now, updatedAt: now)
+                            timeZoneID: calendar.timeZone.identifier, createdAt: now, updatedAt: now,
+                            ownerDevice: deviceID)
         try persist {
             try store.upsert(s)
             try store.logEvent("add", sessionID: s.id, at: now, detail: "\(start.timeIntervalSinceReferenceDate)-\(end.timeIntervalSinceReferenceDate)")
@@ -481,6 +586,72 @@ public final class WorkLedger {
         return delta.keys.sorted().map { day in
             let before = total(for: day, now: now)
             return (day, before, max(0, before + (delta[day] ?? 0)))
+        }
+    }
+
+    // MARK: Sync conflicts (overlaps merged in from another Mac)
+
+    /// A pair of sessions whose times overlap. The ledger never creates these itself; they arrive when two
+    /// Macs recorded the same hours (before sync, or while offline).
+    public struct OverlapConflict: Identifiable, Equatable, Sendable {
+        public var first: WorkSession
+        public var second: WorkSession
+        public var overlap: DateInterval
+        public var id: String { first.id.uuidString + second.id.uuidString }
+        /// Only finished sessions can be kept or merged.
+        public var isResolvable: Bool { first.state == .closed && second.state == .closed }
+    }
+
+    public func overlapConflicts(now: Date? = nil) -> [OverlapConflict] {
+        let now = now ?? clock()
+        func end(_ s: WorkSession) -> Date {
+            switch s.state {
+            case .interrupted: return s.occupiedEnd
+            default: return s.confirmedEnd(now: now)
+            }
+        }
+        let sorted = sessions.sorted { $0.start < $1.start }
+        var result: [OverlapConflict] = []
+        var open: [WorkSession] = []
+        for s in sorted {
+            open.removeAll { end($0) <= s.start }
+            for o in open {
+                let overlapEnd = min(end(o), end(s))
+                if overlapEnd > s.start {
+                    result.append(OverlapConflict(first: o, second: s, overlap: DateInterval(start: s.start, end: overlapEnd)))
+                }
+            }
+            open.append(s)
+        }
+        return result
+    }
+
+    /// Resolves an overlap by keeping one session and deleting the other.
+    public func resolveOverlap(keep: UUID, discard: UUID) throws {
+        guard let kept = sessions.first(where: { $0.id == keep }),
+              let dropped = sessions.first(where: { $0.id == discard }) else { throw LedgerError.sessionNotFound }
+        guard kept.state == .closed, dropped.state == .closed else { throw LedgerError.overlapNeedsStoppedSessions }
+        let now = clock()
+        try persist {
+            try store.deleteSession(id: discard)
+            try store.logEvent("overlap-keep", sessionID: keep, at: now, detail: "discarded \(discard.uuidString)")
+        }
+    }
+
+    /// Resolves an overlap by replacing both sessions with one spanning both.
+    public func mergeOverlap(_ a: UUID, _ b: UUID) throws {
+        guard var first = sessions.first(where: { $0.id == a }),
+              let second = sessions.first(where: { $0.id == b }) else { throw LedgerError.sessionNotFound }
+        guard first.state == .closed, second.state == .closed else { throw LedgerError.overlapNeedsStoppedSessions }
+        let now = clock()
+        first.start = min(first.start, second.start)
+        first.end = max(first.end ?? first.start, second.end ?? second.start)
+        first.checkpoint = first.end ?? first.start
+        first.updatedAt = now
+        try persist {
+            try store.upsert(first)
+            try store.deleteSession(id: b)
+            try store.logEvent("overlap-merge", sessionID: a, at: now, detail: "merged \(b.uuidString)")
         }
     }
 
