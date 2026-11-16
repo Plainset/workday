@@ -102,13 +102,17 @@ public final class WorkStore {
             if meta("device_id").flatMap(UUID.init(uuidString:)) == nil {
                 try setMeta("device_id", UUID().uuidString)
             }
-            try db.run("UPDATE sessions SET owner_device = ? WHERE owner_device = ''", [.text(deviceID)])
+            cachedDeviceID = meta("device_id") ?? ""
+            try db.run("UPDATE sessions SET owner_device = ? WHERE owner_device = ''", [.text(cachedDeviceID)])
         }
     }
 
+    private var cachedDeviceID = ""
+
     /// Random identifier of this installation's data, created once. Used to own sessions and to name this
-    /// device's folder in a sync folder. Never derived from hardware or account details.
-    public var deviceID: String { meta("device_id") ?? "" }
+    /// device's folder in a sync folder. Never derived from hardware or account details. (Cached: it only
+    /// changes inside `migrate()`, which also runs after a restore.)
+    public var deviceID: String { cachedDeviceID }
 
     // MARK: Meta
 

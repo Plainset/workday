@@ -263,12 +263,18 @@ struct SyncTests {
         #expect(b.ledger.total(for: b.ledger.today()) == 1800)
         #expect(b.ledger.elapsed(of: b.ledger.remoteActiveSessions[0]) == 1800)
 
+        // B's heartbeat never touches A's session.
+        let remoteCheckpoint = b.ledger.remoteActiveSessions[0].checkpoint
+        b.ledger.checkpoint(kind: .heartbeat)
+        #expect(try b.ledger.store.session(id: b.ledger.remoteActiveSessions[0].id)?.checkpoint == remoteCheckpoint)
+
         // A relaunch on B never turns A's running session into an interruption.
         let relaunched = try b.relaunch()
         #expect(relaunched.pendingRecoveries.isEmpty)
         #expect(relaunched.remoteActiveSessions.count == 1)
         try b.ledger.reload()
 
+        // B's own timer keeps its heartbeat even while A's session is listed first.
         // Starting on B while A runs is refused with a clear reason…
         #expect(throws: LedgerError.runningOnOtherMac) { try b.ledger.start() }
         // …unless B stops it there and starts here.
@@ -290,6 +296,28 @@ struct SyncTests {
         try converge(a, b)
         #expect(a.ledger.remoteActiveSessions.isEmpty)
         #expect(content(a.ledger) == content(b.ledger))
+    }
+
+    @Test("Both Macs started while offline: both run, time is counted once, heartbeats stay on their own session")
+    func bothStartedOffline() throws {
+        let (a, b) = try pair()
+        try a.ledger.start()
+        b.clock.advance(600)
+        try b.ledger.start()
+        a.clock.now = b.clock.now
+        try converge(a, b)
+        #expect(a.ledger.isRunning && b.ledger.isRunning)
+        #expect(a.ledger.remoteActiveSessions.count == 1)
+        b.clock.advance(1200)
+        let conflicts = b.ledger.overlapConflicts()
+        #expect(conflicts.count == 1)
+        #expect(conflicts.first?.isResolvable == false)
+        #expect(b.ledger.total(for: b.ledger.today()) == 1800)   // 09:00–09:30 once, not 50 min
+        b.ledger.checkpoint(kind: .heartbeat)
+        let mine = try b.ledger.store.session(id: b.ledger.activeSession!.id)
+        #expect(mine?.checkpoint == b.clock.now)
+        let theirs = try b.ledger.store.session(id: b.ledger.remoteActiveSessions[0].id)
+        #expect(theirs?.checkpoint != b.clock.now)
     }
 
     @Test("Only this Mac's own stale session becomes an interruption on relaunch")

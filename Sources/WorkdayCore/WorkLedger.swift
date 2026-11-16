@@ -368,7 +368,7 @@ public final class WorkLedger {
 
     /// Records a trustworthy "alive" checkpoint for the running session.
     public func checkpoint(kind: CheckpointKind) {
-        guard let index = sessions.firstIndex(where: { $0.state == .active }) else { return }
+        guard let index = sessions.firstIndex(where: { $0.state == .active && isLocal($0) }) else { return }
         let now = clock()
         do {
             try store.updateCheckpoint(id: sessions[index].id, at: now, kind: kind)
