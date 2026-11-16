@@ -9,13 +9,26 @@ VERSION="${VERSION:-$(cat VERSION)}"
 BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 APP="$ROOT/dist/Workday.app"
 
+STAGE="$ROOT/.build/universal-stage"
+rm -rf "$STAGE"; mkdir -p "$STAGE"
+# Builds one architecture and copies its binary out at once: newer SwiftPM versions put every triple's products in
+# the same folder (.build/out/Products/Release), so the next build would overwrite it.
+build_arch() { # arch
+  local triple="$1-apple-macosx14.0"
+  swift build -c release --triple "$triple" || return 1
+  local bin
+  bin="$(swift build -c release --triple "$triple" --show-bin-path)/Workday"
+  [[ "$(lipo -archs "$bin")" == "$1" ]] || { echo "error: $bin is not $1" >&2; return 1; }
+  cp "$bin" "$STAGE/Workday-$1"
+}
+
 echo "==> Building arm64 release"
-swift build -c release --triple arm64-apple-macosx14.0
-BINARIES=("$ROOT/.build/arm64-apple-macosx/release/Workday")
+build_arch arm64
+BINARIES=("$STAGE/Workday-arm64")
 if [[ "${ARM64_ONLY:-0}" != "1" ]]; then
   echo "==> Building x86_64 release"
-  if swift build -c release --triple x86_64-apple-macosx14.0; then
-    BINARIES+=("$ROOT/.build/x86_64-apple-macosx/release/Workday")
+  if build_arch x86_64; then
+    BINARIES+=("$STAGE/Workday-x86_64")
   elif [[ "${REQUIRE_UNIVERSAL:-0}" == "1" ]]; then
     echo "error: x86_64 build failed and REQUIRE_UNIVERSAL=1" >&2
     exit 1
