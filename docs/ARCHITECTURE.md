@@ -108,8 +108,8 @@ Restore is disabled while the timer runs.
 ## Sync between Macs
 
 Optional, off by default (Settings → Sync). There is no server and no Workday account: the "account" is whatever
-keeps a folder in sync between the owner's Macs — normally iCloud Drive under one Apple ID, but any folder kept in
-sync by another tool works.
+keeps a folder in sync between the owner's Macs — normally iCloud Drive under one Apple ID, or an iCloud Drive
+folder shared between two Apple IDs, but any folder kept in sync by another tool works.
 
 **Each Mac keeps its own SQLite database** as the source of truth for its UI. The live database is never put in
 the sync folder; Macs exchange change records instead.
