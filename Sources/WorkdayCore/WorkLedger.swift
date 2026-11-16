@@ -169,6 +169,10 @@ public final class WorkLedger {
     public var deviceID: String { store.deviceID }
 
     /// Whether `session` was recorded by this Mac (only those can be this Mac's running timer or recovery).
+    /// How long after its last reported checkpoint another Mac's running session keeps counting here.
+    /// Running Macs report a checkpoint about every ten minutes while sync is on.
+    public static let remoteLiveGrace: TimeInterval = 30 * 60
+
     public func isLocal(_ session: WorkSession) -> Bool {
         session.ownerDevice.isEmpty || session.ownerDevice == store.deviceID
     }
@@ -195,12 +199,18 @@ public final class WorkLedger {
     /// Seconds that running sessions (on any Mac) add to `day`, excluding time already counted by settled
     /// sessions and counting time shared by two running sessions once.
     private func liveSeconds(on day: DayKey, now: Date) -> TimeInterval {
-        let running = sessions.filter { $0.state == .active && now > $0.start }
+        // Another Mac's running session counts only while that Mac keeps reporting it: a Mac that went to
+        // sleep or offline mid-session stops adding time here until its own recovery settles the gap.
+        let running: [(Date, Date)] = sessions.compactMap { s in
+            guard s.state == .active else { return nil }
+            let end = isLocal(s) ? now : min(now, s.checkpoint.addingTimeInterval(Self.remoteLiveGrace))
+            return end > s.start ? (s.start, end) : nil
+        }
         guard !running.isEmpty else { return 0 }
         let dayStart = day.startDate(in: calendar)
         let dayEnd = day.endDate(in: calendar)
         var total: TimeInterval = 0
-        for live in Self.union(running.map { ($0.start, now) }) {
+        for live in Self.union(running) {
             let start = max(live.start, dayStart)
             let end = min(live.end, dayEnd)
             guard end > start else { continue }
@@ -635,6 +645,7 @@ public final class WorkLedger {
         try persist {
             try store.deleteSession(id: discard)
             try store.logEvent("overlap-keep", sessionID: keep, at: now, detail: "discarded \(discard.uuidString)")
+            try store.recordOverlapResolution(keep: keep, discard: discard)
         }
     }
 
@@ -652,6 +663,7 @@ public final class WorkLedger {
             try store.upsert(first)
             try store.deleteSession(id: b)
             try store.logEvent("overlap-merge", sessionID: a, at: now, detail: "merged \(b.uuidString)")
+            try store.recordOverlapResolution(keep: a, discard: b)
         }
     }
 

@@ -114,6 +114,15 @@ public final class WorkStore {
     /// changes inside `migrate()`, which also runs after a restore.)
     public var deviceID: String { cachedDeviceID }
 
+    /// Gives this installation a new identity. Used when sync finds another Mac writing under the same
+    /// identifier (a database copied by Migration Assistant or from a backup of another Mac). Existing
+    /// sessions keep their owner: they belong to whichever Mac created them.
+    public func regenerateDeviceID() throws {
+        let id = UUID().uuidString
+        try setMeta("device_id", id)
+        cachedDeviceID = id
+    }
+
     // MARK: Meta
 
     public func meta(_ key: String) -> String? {

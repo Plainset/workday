@@ -205,6 +205,11 @@ public enum SyncValidation {
     /// Records whose clock is further ahead of this Mac than this are rejected.
     public static let maximumClockLead: TimeInterval = 366 * 24 * 3600
 
+    /// Largest sequence number accepted from the sync folder (far beyond any real log; keeps arithmetic safe).
+    public static let maximumSequence: Int64 = 1 << 53
+
+    static func isSequence(_ n: Int64) -> Bool { n >= 0 && n <= maximumSequence }
+
     static func isPlausibleInstant(_ t: Double) -> Bool {
         t.isFinite && t >= earliestInstant && t <= latestInstant
     }

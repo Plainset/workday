@@ -414,9 +414,183 @@ struct SyncTests {
         try a.ledger.reload()
         try converge(a, b)
         let ids = Set(b.ledger.sessions.map(\.id))
-        #expect(ids == [s1.id, s2.id])          // the restored state, published as new edits
+        // This Mac's restored sessions are published as new edits; the other Mac's newer session survives.
+        #expect(ids == [s1.id, s2.id, s3.id])
         #expect(content(a.ledger) == content(b.ledger))
         #expect(a.ledger.store.deviceID == a.id)
+    }
+
+    @Test("Restoring an old backup never rolls back or deletes another Mac's sessions, even a running one")
+    func restoreLeavesOtherMacsAlone() throws {
+        let (a, b) = try pair()
+        try b.ledger.start()
+        let running = try #require(b.ledger.activeSession)
+        try converge(a, b)
+        let backups = BackupManager(store: a.ledger.store, directory: a.dir.appendingPathComponent("Backups"))
+        let backup = try backups.createBackup(kind: .manual, now: a.clock.now)   // contains B's running session
+
+        b.clock.advance(1800)
+        a.clock.advance(1800)
+        try b.ledger.stop()
+        let later = try b.ledger.addSession(start: date(2026, 11, 16, 6), end: date(2026, 11, 16, 7))
+        try converge(a, b)
+
+        a.clock.advance(60)
+        b.clock.advance(60)
+        try backups.restore(backup, now: a.clock.now)
+        try a.ledger.reload()
+        try converge(a, b)
+        #expect(Set(b.ledger.sessions.map(\.id)) == [running.id, later.id])
+        #expect(b.ledger.sessions.first { $0.id == running.id }?.state == .closed)
+        #expect(!b.ledger.isRunning)
+        #expect(content(a.ledger) == content(b.ledger))
+    }
+
+    @Test("Two Macs settling the same overlap differently while offline keep exactly one session")
+    func overlapResolvedDifferentlyOnBoth() throws {
+        let (a, b) = try pair()
+        let s1 = try a.ledger.addSession(start: date(2026, 11, 15, 9), end: date(2026, 11, 15, 12))
+        let s2 = try b.ledger.addSession(start: date(2026, 11, 15, 10), end: date(2026, 11, 15, 13))
+        try converge(a, b)
+        a.clock.advance(60)
+        try a.ledger.resolveOverlap(keep: s1.id, discard: s2.id)
+        b.clock.advance(120)
+        try b.ledger.resolveOverlap(keep: s2.id, discard: s1.id)   // later decision
+        try converge(a, b)
+        #expect(a.ledger.sessions.map(\.id) == [s2.id])
+        #expect(content(a.ledger) == content(b.ledger))
+
+        // Same with merges.
+        let m1 = try a.ledger.addSession(start: date(2026, 11, 14, 9), end: date(2026, 11, 14, 12))
+        let m2 = try b.ledger.addSession(start: date(2026, 11, 14, 10), end: date(2026, 11, 14, 13))
+        try converge(a, b)
+        b.clock.advance(60)
+        try b.ledger.mergeOverlap(m2.id, m1.id)
+        a.clock.advance(120)
+        try a.ledger.mergeOverlap(m1.id, m2.id)   // later decision
+        try converge(a, b)
+        let day = DayKey(date(2026, 11, 14, 12), calendar: calendar())
+        #expect(a.ledger.sessions.filter { DayKey($0.start, calendar: calendar()) == day }.map(\.id) == [m1.id])
+        #expect(a.ledger.total(for: day) == 4 * 3600)
+        #expect(content(a.ledger) == content(b.ledger))
+    }
+
+    @Test("Hostile sequence numbers are rejected without crashing, on every later pass too")
+    func hostileSequenceNumbers() throws {
+        let (a, _) = try pair()
+        let peer = UUID().uuidString
+        let epoch = UUID().uuidString
+        let s = WorkSession(start: date(2026, 11, 10, 8), end: date(2026, 11, 10, 9), state: .closed,
+                            createdAt: date(2026, 11, 10, 9), ownerDevice: peer)
+        let ts = HybridTimestamp(wall: HybridTimestamp.milliseconds(t0), counter: 0, device: peer)
+        try writePeer(a.folder, device: peer, epoch: epoch, seq: 2,
+                      files: ["log-000000000001.jsonl": try line(.session(s, hlc: ts), seq: 1)
+                                + (try line(.session(s, hlc: ts), seq: Int64.max))])
+        try a.sync()
+        try a.sync()
+        #expect(a.ledger.sessions.count == 1)
+        try writePeer(a.folder, device: peer, epoch: epoch, seq: Int64.max, files: [:])
+        try a.sync()
+        try a.ledger.store.setMeta("sync_cursor_\(peer)", "\(epoch):\(Int64.max)")
+        try a.sync()
+        try a.sync()
+        #expect(a.ledger.sessions.count == 1)
+    }
+
+    @Test("Records dated far ahead, or from a newer version, are kept for later instead of skipped")
+    func heldRecords() throws {
+        let (a, _) = try pair()
+        let peer = UUID().uuidString
+        let epoch = UUID().uuidString
+        let s = WorkSession(start: date(2026, 11, 10, 8), end: date(2026, 11, 10, 9), state: .closed,
+                            createdAt: date(2026, 11, 10, 9), ownerDevice: peer)
+        let ahead = HybridTimestamp(wall: HybridTimestamp.milliseconds(t0.addingTimeInterval(400 * 86400)), counter: 0, device: peer)
+        try writePeer(a.folder, device: peer, epoch: epoch, seq: 1,
+                      files: ["log-000000000001.jsonl": try line(.session(s, hlc: ahead), seq: 1)])
+        var report = try a.sync()
+        #expect(a.ledger.sessions.isEmpty)
+        #expect(report.problems.contains { $0.contains("date and time") })
+        a.clock.advance(60 * 86400)   // this Mac's clock is corrected
+        report = try a.sync()
+        #expect(a.ledger.sessions.count == 1)
+        #expect(report.problems.isEmpty)
+
+        // An unknown kind of record waits for an update, and so does everything after it.
+        let other = UUID().uuidString
+        let ts = HybridTimestamp(wall: HybridTimestamp.milliseconds(a.clock.now), counter: 0, device: other)
+        var later = s
+        later.id = UUID()
+        later.ownerDevice = other
+        let future = Data("{\"hlc\":\"\(ts)\",\"kind\":\"project\",\"seq\":1}\n".utf8)
+        try writePeer(a.folder, device: other, epoch: UUID().uuidString, seq: 2,
+                      files: ["log-000000000001.jsonl": future + (try line(.session(later, hlc: ts), seq: 2))])
+        report = try a.sync()
+        #expect(!a.ledger.sessions.contains { $0.id == later.id })
+        #expect(report.problems.contains { $0.contains("newer version") })
+        report = try a.sync()
+        #expect(report.problems.contains { $0.contains("newer version") })
+    }
+
+    @Test("Another Mac's running session stops counting once that Mac stops reporting it")
+    func staleRemoteSessionCapped() throws {
+        let (a, b) = try pair()
+        try b.ledger.start()
+        try converge(a, b)
+        a.clock.advance(5 * 3600)   // B went to sleep without stopping
+        let today = a.ledger.today()
+        #expect(a.ledger.total(for: today) == WorkLedger.remoteLiveGrace)
+        #expect(!a.ledger.remoteActiveSessions.isEmpty)
+    }
+
+    @Test("A Mac whose database was copied to another Mac takes a new identity instead of sharing one")
+    func copiedDatabaseGetsNewIdentity() throws {
+        let (a, b) = try pair()
+        try a.ledger.addSession(start: date(2026, 11, 15, 9), end: date(2026, 11, 15, 10))
+        try converge(a, b)
+        // C starts from a copy of A's database (Migration Assistant), same sync folder.
+        let cDir = tempDir()
+        try a.ledger.store.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        try FileManager.default.copyItem(at: a.dir.appendingPathComponent("workday.sqlite"),
+                                         to: cDir.appendingPathComponent("workday.sqlite"))
+        let cStore = try WorkStore(path: cDir.appendingPathComponent("workday.sqlite").path)
+        let cLedger = try WorkLedger(store: cStore, calendar: calendar(), clock: { [clock = a.clock] in clock.now })
+        let c = SyncEngine(ledger: cLedger)
+        #expect(cLedger.deviceID == a.id)
+        a.clock.advance(60)
+        try a.ledger.addSession(start: date(2026, 11, 15, 11), end: date(2026, 11, 15, 12))
+        try a.sync()                                   // A writes a new device.json (same epoch)
+        try c.sync(folder: a.folder, deviceName: "Copy")
+        // C's epoch matches, so C stays; once C bootstraps its own log, A sees the mismatch and moves.
+        a.clock.advance(60)
+        try cLedger.addSession(start: date(2026, 11, 15, 13), end: date(2026, 11, 15, 14))
+        try c.sync(folder: a.folder, deviceName: "Copy")
+        try a.sync()
+        try c.sync(folder: a.folder, deviceName: "Copy")
+        try converge(a, b)
+        try c.sync(folder: a.folder, deviceName: "Copy")
+        try converge(a, b)
+        #expect(a.id != cLedger.deviceID)
+        #expect(a.ledger.sessions.count == 3)
+        #expect(content(a.ledger) == content(b.ledger))
+        #expect(Set(content(a.ledger)) == Set(content(cLedger)))
+    }
+
+    @Test("A database restored from before its last sync starts a fresh log instead of being skipped")
+    func rolledBackDatabaseRepublishes() throws {
+        let (a, b) = try pair()
+        try a.ledger.addSession(start: date(2026, 11, 15, 9), end: date(2026, 11, 15, 10))
+        try converge(a, b)
+        let seqBefore = a.ledger.store.meta("sync_seq")
+        a.clock.advance(60)
+        try a.ledger.addSession(start: date(2026, 11, 15, 11), end: date(2026, 11, 15, 12))
+        try converge(a, b)
+        // Roll back A's sync bookkeeping as if its database were restored from an earlier copy.
+        try a.ledger.store.setMeta("sync_seq", seqBefore ?? "0")
+        a.clock.advance(60)
+        let late = try a.ledger.addSession(start: date(2026, 11, 15, 13), end: date(2026, 11, 15, 14))
+        try converge(a, b)
+        #expect(b.ledger.sessions.contains { $0.id == late.id })
+        #expect(content(a.ledger) == content(b.ledger))
     }
 
     @Test("Many small changes are compacted into a snapshot that a new Mac can read")

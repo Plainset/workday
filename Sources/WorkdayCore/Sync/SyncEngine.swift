@@ -84,10 +84,10 @@ public final class SyncEngine {
     public func sync(folder: URL, deviceName: String) throws -> SyncReport {
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: folder.path, isDirectory: &isDir), isDir.boolValue else { throw SyncError.folderMissing }
-        let me = store.deviceID
+        var me = store.deviceID
         let root = Self.syncRoot(in: folder)
         let devices = root.appendingPathComponent("devices", isDirectory: true)
-        let mine = devices.appendingPathComponent(me, isDirectory: true)
+        var mine = devices.appendingPathComponent(me, isDirectory: true)
         // Everything under the sync folder is untrusted: refuse links that could redirect writes or deletes.
         for dir in [root, devices, mine] where Self.isSymbolicLink(dir) {
             throw SyncError.notWritable("“\(dir.lastPathComponent)” is a link, not a folder")
@@ -103,6 +103,25 @@ public final class SyncEngine {
 
         let now = clock()
         var report = SyncReport(completedAt: now)
+        // This Mac's own folder must match what this Mac last wrote there.
+        var forceBootstrap = false
+        if store.meta("sync_bound_folder") == root.path, let own = readDeviceInfo(in: mine), own.device == me {
+            if let epoch = store.meta("sync_epoch"), own.epoch != epoch {
+                // Another Mac writes under this Mac's identity (its database was copied from this one, for
+                // example by Migration Assistant). Take a new identity and leave that folder to the other Mac.
+                try store.regenerateDeviceID()
+                me = store.deviceID
+                mine = devices.appendingPathComponent(me, isDirectory: true)
+                do { try OwnerOnly.createDirectory(at: mine) } catch { throw Self.mapped(error) }
+                guard Self.isRealDirectory(mine) else { throw SyncError.notWritable("the sync folder isn't a normal folder") }
+                report.problems.append("Another Mac was using this Mac's sync identity (for example after Migration Assistant), so this Mac now has its own.")
+                forceBootstrap = true
+            } else if own.seq > (Int64(store.meta("sync_seq") ?? "0") ?? 0) {
+                // The database went back in time (restored from Time Machine, for example): start a new log,
+                // so other Macs don't skip what this Mac publishes next.
+                forceBootstrap = true
+            }
+        }
         var hlc = HybridClock(device: me, last: store.meta("sync_hlc").flatMap(HybridTimestamp.init))
         let timerBefore = ledger.activeSession
 
@@ -110,7 +129,7 @@ public final class SyncEngine {
         // is published again as a snapshot and every peer is read from the beginning.
         let hasDeviceFile = fm.fileExists(atPath: mine.appendingPathComponent("device.json").path)
             || fm.fileExists(atPath: mine.appendingPathComponent(".device.json.icloud").path)
-        let bootstrap = store.meta("sync_bound_folder") != root.path || !hasDeviceFile
+        let bootstrap = forceBootstrap || store.meta("sync_bound_folder") != root.path || !hasDeviceFile
         let peerIDs = peerFolders(in: devices, excluding: me)
         if bootstrap {
             // Only this engine's own files (a stale log from an earlier life of this device's folder).
@@ -144,6 +163,7 @@ public final class SyncEngine {
             try store.setMeta("sync_seq", String(seq))
             // Written inside the transaction: if the file can't be written, nothing is marked as published.
             try writeSegment(numbered, firstSeq: first, in: mine)
+            try store.setMeta("sync_hlc", hlc.last.description)
             report.published = records.count
         }
 
@@ -202,8 +222,25 @@ public final class SyncEngine {
 
         // Sessions and settings change only with the data revision (checkpoints don't bump it).
         if bootstrap || store.meta("sync_published_revision") != String(store.dataRevision) {
+            let loaded = try store.loadSessions()
+            // A settled overlap is published as one decision: the kept session and the discarded one's deletion
+            // share a clock, so if two Macs settle the same overlap differently, the later decision wins whole
+            // (never both sessions deleted).
+            let resolutions = store.pendingOverlapResolutions()
+            if !resolutions.isEmpty {
+                let byID = Dictionary(loaded.map { ($0.id.uuidString, $0) }, uniquingKeysWith: { a, _ in a })
+                for r in resolutions {
+                    guard let kept = byID[r.keep], byID[r.discard] == nil else { continue }
+                    let ts = hlc.tick(now: now)
+                    out.append(.session(kept, hlc: ts))
+                    try set(.session, r.keep, ts, SyncHash.session(kept))
+                    out.append(.tombstone(id: r.discard, hlc: ts))
+                    try set(.session, r.discard, ts, "", deleted: true)
+                }
+                try store.setMeta("sync_resolutions", "")
+            }
             var present = Set<String>()
-            for s in try store.loadSessions() {
+            for s in loaded {
                 let key = s.id.uuidString
                 present.insert(key)
                 let hash = SyncHash.session(s)
@@ -331,75 +368,123 @@ public final class SyncEngine {
     /// Imports one peer's new records. Returns true if local data changed.
     private func importPeer(_ peer: String, from dir: URL, versions: inout [SyncVersionKey: SyncVersion],
                             clock hlc: inout HybridClock, now: Date, report: inout SyncReport) throws -> Bool {
-        guard let info = readDeviceInfo(in: dir), info.device == peer, SyncValidation.isDeviceID(info.epoch) else {
+        guard let info = readDeviceInfo(in: dir), info.device == peer, SyncValidation.isDeviceID(info.epoch),
+              SyncValidation.isSequence(info.seq) else {
             return false
         }
         let name = SyncValidation.cleanName(info.name).isEmpty ? "Another Mac" : SyncValidation.cleanName(info.name)
         report.peers.append(SyncPeer(id: peer, name: name,
                                      lastSeen: info.updatedAt.isFinite ? Date(timeIntervalSince1970: info.updatedAt) : nil))
+        if info.format > Self.formatVersion {
+            report.problems.append(Self.newerVersionProblem(name))
+            return false
+        }
         let cursorKey = "sync_cursor_\(peer)"
         let stored = store.meta(cursorKey)?.split(separator: ":", maxSplits: 1).map(String.init) ?? []
-        var cursor: Int64 = (stored.count == 2 && stored[0] == info.epoch) ? (Int64(stored[1]) ?? 0) : 0
+        var cursor: Int64 = 0
+        if stored.count == 2, stored[0] == info.epoch, let n = Int64(stored[1]), SyncValidation.isSequence(n) { cursor = n }
         if info.seq <= cursor && stored.first == info.epoch { return false }
 
         var changed = false
         var unreadable = 0
         var waiting = false
+        // Set when a record can't be applied yet; the cursor stops before it, so it is read again later.
+        var held: ApplyResult?
+        func applyAll(_ records: [SyncRecord]) throws {
+            for record in records {
+                let result = try apply(record, from: peer, versions: &versions, clock: &hlc, now: now)
+                switch result {
+                case .applied: changed = true; report.applied += 1
+                case .invalid: unreadable += 1
+                case .ignored: break
+                case .tooFarAhead, .newerVersion: held = result; return
+                }
+            }
+        }
         try store.db.transaction {
             let segments = listSegments(in: dir)
             let firstStart = segments.first?.start ?? Int64.max
             if firstStart > cursor + 1, let snapshot = readSnapshot(in: dir), snapshot.epoch == info.epoch,
-               snapshot.device == peer, snapshot.seq > cursor {
-                for record in snapshot.records {
-                    switch try apply(record, from: peer, versions: &versions, clock: &hlc, now: now) {
-                    case .applied: changed = true; report.applied += 1
-                    case .invalid: unreadable += 1
-                    case .ignored: break
-                    }
+               snapshot.device == peer, SyncValidation.isSequence(snapshot.seq), snapshot.seq > cursor {
+                if snapshot.format > Self.formatVersion {
+                    held = .newerVersion
+                } else {
+                    try applyAll(snapshot.records)
+                    if held == nil { cursor = snapshot.seq }
                 }
-                cursor = snapshot.seq
             } else if firstStart > cursor + 1 && info.seq > cursor {
                 waiting = true
             }
-            if !waiting {
-                for (i, segment) in segments.enumerated() {
+            if !waiting && held == nil {
+                segmentLoop: for (i, segment) in segments.enumerated() {
                     let next = i + 1 < segments.count ? segments[i + 1].start : Int64.max
                     if next - 1 <= cursor { continue }
                     if segment.start > cursor + 1 || !segment.available { waiting = true; break }
                     guard let lines = readLines(segment.url) else { waiting = true; break }
                     for line in lines.complete {
-                        guard line.count <= SyncValidation.maximumLineBytes,
-                              let record = try? JSONDecoder().decode(SyncRecord.self, from: line),
-                              let recordSeq = record.seq else { unreadable += 1; continue }
-                        guard recordSeq > cursor else { continue }
-                        switch try apply(record, from: peer, versions: &versions, clock: &hlc, now: now) {
-                        case .applied: changed = true; report.applied += 1
-                        case .invalid: unreadable += 1
-                        case .ignored: break
+                        guard line.count <= SyncValidation.maximumLineBytes else { unreadable += 1; continue }
+                        guard let record = try? JSONDecoder().decode(SyncRecord.self, from: line) else {
+                            // A record kind added by a later version waits for an update; anything else is damage.
+                            if let envelope = try? JSONDecoder().decode(Envelope.self, from: line),
+                               let seq = envelope.seq, SyncValidation.isSequence(seq), seq > cursor,
+                               let kind = envelope.kind, SyncRecord.Kind(rawValue: kind) == nil {
+                                held = .newerVersion
+                                break segmentLoop
+                            }
+                            unreadable += 1
+                            continue
                         }
+                        guard let recordSeq = record.seq, SyncValidation.isSequence(recordSeq) else { unreadable += 1; continue }
+                        guard recordSeq > cursor else { continue }
+                        try applyAll([record])
+                        if held != nil { break segmentLoop }
                         cursor = max(cursor, recordSeq)
                     }
                     if lines.truncated { waiting = true; break }
                 }
             }
             try store.setMeta(cursorKey, "\(info.epoch):\(cursor)")
+            try store.setMeta("sync_hlc", hlc.last.description)
         }
         if unreadable > 0 {
             report.problems.append("Skipped \(unreadable) unreadable change\(unreadable == 1 ? "" : "s") from “\(name)”.")
         }
-        if waiting && cursor < info.seq {
-            report.problems.append("Waiting for changes from “\(name)” to finish downloading.")
+        switch held {
+        case .newerVersion?:
+            report.problems.append(Self.newerVersionProblem(name))
+        case .tooFarAhead?:
+            report.problems.append("Changes from “\(name)” are dated more than a year after this Mac's clock. Check the date and time on both Macs; they'll be applied once the clocks agree.")
+        default:
+            if waiting && cursor < info.seq {
+                report.problems.append("Waiting for changes from “\(name)” to finish downloading.")
+            }
         }
         return changed
     }
 
-    enum ApplyResult { case applied, ignored, invalid }
+    enum ApplyResult {
+        case applied, ignored, invalid
+        /// Dated implausibly far ahead of this Mac's clock: kept for a later pass, not skipped.
+        case tooFarAhead
+        /// Written by a later version of Workday: kept until this Mac is updated.
+        case newerVersion
+    }
+
+    /// The fields every record has, used to recognise records of a kind this version doesn't know.
+    private struct Envelope: Decodable {
+        var seq: Int64?
+        var kind: String?
+    }
+
+    nonisolated static func newerVersionProblem(_ name: String) -> String {
+        "“\(name)” uses a newer version of Workday. Update Workday on this Mac to receive its latest changes."
+    }
 
     private func apply(_ r: SyncRecord, from peer: String, versions: inout [SyncVersionKey: SyncVersion],
                        clock hlc: inout HybridClock, now: Date) throws -> ApplyResult {
-        guard let ts = HybridTimestamp(r.hlc),
-              ts.wall <= HybridTimestamp.milliseconds(now.addingTimeInterval(SyncValidation.maximumClockLead)) else {
-            return .invalid
+        guard let ts = HybridTimestamp(r.hlc) else { return .invalid }
+        guard ts.wall <= HybridTimestamp.milliseconds(now.addingTimeInterval(SyncValidation.maximumClockLead)) else {
+            return .tooFarAhead
         }
         func newer(_ k: SyncVersionKey) -> Bool {
             guard let known = versions[k] else { return true }
@@ -431,7 +516,8 @@ public final class SyncEngine {
             try record(k, "", deleted: true)
             return .applied
         case .setting:
-            guard let fieldText = r.field, let field = SyncedSetting(rawValue: fieldText), let value = r.value else { return .invalid }
+            guard let fieldText = r.field, let value = r.value else { return .invalid }
+            guard let field = SyncedSetting(rawValue: fieldText) else { return .newerVersion }
             var settings = store.loadSettings()
             guard field.apply(value, to: &settings) else { return .invalid }
             hlc.observe(ts)
@@ -485,7 +571,7 @@ public final class SyncEngine {
                 available = false
             }
             guard real.hasPrefix("log-"), real.hasSuffix(".jsonl"),
-                  let start = Int64(real.dropFirst(4).dropLast(6)), start > 0 else { continue }
+                  let start = Int64(real.dropFirst(4).dropLast(6)), start > 0, SyncValidation.isSequence(start) else { continue }
             let url = dir.appendingPathComponent(real)
             if !available { requestDownload(url) }
             if result[start]?.available != true { result[start] = Segment(start: start, url: url, available: available) }
@@ -501,6 +587,12 @@ public final class SyncEngine {
     /// placeholder is present.
     private func readBounded(_ url: URL) -> Data? {
         let placeholder = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).icloud")
+        // A file iCloud hasn't downloaded yet would make the read wait for the network: ask for it and come back.
+        if let status = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]).ubiquitousItemDownloadingStatus,
+           status == .notDownloaded {
+            requestDownload(url)
+            return nil
+        }
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else {
             if errno == ENOENT, fm.fileExists(atPath: placeholder.path) { requestDownload(url) }
@@ -602,6 +694,22 @@ public struct SyncVersion: Equatable, Sendable {
 }
 
 extension WorkStore {
+    /// Remembers that the owner settled an overlap, so the next sync pass publishes the kept session and the
+    /// discarded one's deletion with one shared clock (see `SyncEngine`). At most the latest 200 are kept.
+    func recordOverlapResolution(keep: UUID, discard: UUID) throws {
+        var lines = (meta("sync_resolutions") ?? "").split(separator: "\n").map(String.init)
+        lines.append("\(keep.uuidString) \(discard.uuidString)")
+        try setMeta("sync_resolutions", lines.suffix(200).joined(separator: "\n"))
+    }
+
+    func pendingOverlapResolutions() -> [(keep: String, discard: String)] {
+        (meta("sync_resolutions") ?? "").split(separator: "\n").compactMap { line in
+            let parts = line.split(separator: " ").map(String.init)
+            guard parts.count == 2, UUID(uuidString: parts[0]) != nil, UUID(uuidString: parts[1]) != nil else { return nil }
+            return (parts[0], parts[1])
+        }
+    }
+
     public func loadSyncVersions() throws -> [SyncVersionKey: SyncVersion] {
         var result: [SyncVersionKey: SyncVersion] = [:]
         try db.query("SELECT entity, key, hlc, hash, deleted FROM sync_versions") { row in

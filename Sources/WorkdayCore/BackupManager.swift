@@ -200,10 +200,27 @@ public final class BackupManager {
         var devicePreferences = ["login_item_enabled", "login_item_bundle_id", "device_id"].compactMap { key in
             store.meta(key).map { (key, $0) }
         }
-        // Sync bookkeeping describes this Mac's place in the sync folder, not history: keep it, so the restored
-        // state is published to other Macs as new edits instead of being silently overwritten by them.
-        try? store.db.query("SELECT key, value FROM meta WHERE key LIKE 'sync_%'") { devicePreferences.append(($0.text(0), $0.text(1))) }
-        let syncVersions = (try? store.loadSyncVersions()) ?? [:]
+        // Sync bookkeeping describes this Mac's place in the sync folder, not history: keep it, so this Mac's
+        // own restored sessions are published to other Macs as new edits instead of being overwritten by them.
+        // Sessions another Mac owns are not this Mac's to roll back: their sync versions are dropped and every
+        // other Mac is read again from the start, so their current state comes back (idempotently).
+        try? store.db.query("SELECT key, value FROM meta WHERE key LIKE 'sync_%' AND key NOT LIKE 'sync_cursor_%'") {
+            devicePreferences.append(($0.text(0), $0.text(1)))
+        }
+        var syncVersions = (try? store.loadSyncVersions()) ?? [:]
+        var foreign = Set<String>()
+        let me = store.deviceID
+        for s in (try? store.loadSessions()) ?? [] where !s.ownerDevice.isEmpty && s.ownerDevice != me {
+            foreign.insert(s.id.uuidString)
+        }
+        // Backups from before sync have no owner column; their sessions are all this Mac's.
+        try? source.query("SELECT id, owner_device FROM sessions") { row in
+            let owner = row.text(1)
+            if !owner.isEmpty && owner != me { foreign.insert(row.text(0)) }
+        }
+        for key in syncVersions.keys where key.entity == .session && foreign.contains(key.key) {
+            syncVersions[key] = nil
+        }
         do {
             try SQLiteDatabase.copy(from: source, to: store.db)
             for record in sent {
@@ -214,6 +231,8 @@ public final class BackupManager {
             for (key, value) in devicePreferences {
                 try store.setMeta(key, value)
             }
+            // Compare every restored session with what was last published, whatever the revision numbers say.
+            if store.meta("sync_published_revision") != nil { try store.setMeta("sync_published_revision", "-1") }
             try store.migrate()
             try store.db.run("DELETE FROM sync_versions")
             for (key, version) in syncVersions {
