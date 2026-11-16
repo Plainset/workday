@@ -12,12 +12,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
   notifications appear on every Mac. A timer running on another Mac shows as "Running on …" with
   *Stop There & Start Here*. Overlapping sessions recorded on two Macs are listed under Settings → Sync →
   Sync conflicts (keep one or merge) and counted once until resolved. Off by default; a safety backup is made when
-  it is turned on. `scripts/sync_e2e.sh` checks two real instances against a temporary folder.
+  it is turned on. Restoring a backup rolls back only this Mac's own sessions. `scripts/sync_e2e.sh` checks two
+  real instances against a temporary folder.
 
 ### Changed
 - Database schema v2: each session records the Mac that owns it, plus a sync version table. Upgrades in place;
   v1 backups still restore.
 - Crash recovery only reviews sessions that were running on this Mac.
+- `scripts/build_app.sh` works with SwiftPM versions that put every architecture's build in one folder.
 - Privacy statement updated for optional sync (README, PRIVACY.md, Settings → Data & Privacy).
 - Lower memory use: closed windows and the menu bar popover are now released completely, the running day redraws only
   its own tile, and freed memory is returned to macOS. Includes a `--memtest` harness for leak checks.

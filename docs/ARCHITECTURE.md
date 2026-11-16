@@ -146,7 +146,9 @@ the sync folder; Macs exchange change records instead.
 
 * **Clock**: every record carries a hybrid logical clock `wall(ms)-counter-deviceID`, compared in that order. A Mac
   never issues a clock below the largest it has seen, so an edit made after seeing another Mac's edit always wins
-  even if this Mac's wall clock is behind. Records more than a year ahead of this Mac's clock are rejected.
+  even if this Mac's wall clock is behind. Records more than a year ahead of this Mac's clock are held (the cursor
+  stops before them and Settings asks to check the date); records of a kind, setting or format this version
+  doesn't know are held the same way until Workday is updated, never skipped for good.
 * **Finding local changes**: `sync_versions(entity, key, hlc, hash, deleted)` holds the last synced version of every
   record. A pass compares the database with it (sessions and settings only when `data_revision` changed): a new
   or changed row gets a fresh clock, a row that vanished becomes a tombstone. All write paths — timer, editor,
@@ -158,7 +160,12 @@ the sync folder; Macs exchange change records instead.
 * **Untrusted input**: files are read only as regular files (`O_NOFOLLOW`, `fstat`), at most 16 MB per file and
   4 KB per line; links inside the sync tree are refused; bootstrap deletes only the engine's own file names.
   Every field is bounded (UUIDs, instants 2000–2100, end after start, finished sessions ≤ 400 days, enums, time
-  zone text, setting ranges); a malformed record is skipped and reported, never run.
+  zone text, setting ranges, sequence numbers ≤ 2^53); a malformed record is skipped and reported, never run.
+* **Identity checks**: if this Mac's own `device.json` carries an epoch it didn't write, another Mac shares its
+  identity (a database copied by Migration Assistant), so it takes a new `device_id` and starts a fresh log. If
+  that file is ahead of `meta.sync_seq`, the database went back in time and the Mac also starts a fresh log.
+* **Restore**: a backup restored while sync is on rolls back only this Mac's own sessions (republished as new edits).
+  Versions of sessions another Mac owns are dropped and every peer is read again, so their current state returns.
 
 ### Running timer across Macs
 
@@ -168,8 +175,10 @@ the sync folder; Macs exchange change records instead.
 * Another Mac's running session shows as "Running on <name>" with its live elapsed time and counts toward totals.
   Starting while it runs offers **Stop It There and Start Here** (`stopRemoteAndStart`): an edit that ends the
   remote session now, which then stops the timer on that Mac when it syncs.
-* Heartbeats stay local (every 30 s); a `checkpoint` record is shared at most every 10 minutes for display. A
-  crashed remote session is recovered on its own Mac at its next launch, and the result syncs back.
+* Heartbeats stay local (every 30 s); a `checkpoint` record is shared at most every 10 minutes. Another Mac's
+  running session counts toward totals only up to 30 minutes past its last shared checkpoint, so a Mac that went to
+  sleep or offline doesn't inflate totals here. A crashed remote session is recovered on its own Mac at its next
+  launch, and the result syncs back.
 
 ### Overlaps and totals
 
@@ -178,6 +187,8 @@ offline). They are imported, never deleted automatically, and listed under Setti
 where the owner keeps one or merges them into one. Until then, day and week totals count the **union** of all
 sessions' time (`WorkLedger.union`; running sessions add only time not already covered), so no minute is counted
 twice. The editor still refuses to *create* overlaps.
+Keeping one or merging is published as one decision (the kept session and the other's deletion share one clock),
+so if both Macs settle the same overlap differently while offline, the later decision wins whole.
 
 ### Lifecycle
 
@@ -186,8 +197,8 @@ twice. The editor still refuses to *create* overlaps.
   directory listing and a few small reads; nothing runs when sync is off, and there is no per-second disk work.
 * Turning sync off stops all reading and writing and keeps local data. Choosing a different folder publishes
   everything there again.
-* A restore keeps the sync bookkeeping (`device_id`, `sync_*` meta, `sync_versions`), so the restored state is
-  published as new edits rather than being overwritten by the other Macs.
+* A restore keeps the sync bookkeeping (`device_id`, `sync_*` meta, `sync_versions` for this Mac's own sessions),
+  so this Mac's restored sessions are published as new edits rather than being overwritten by the other Macs.
 
 ## Liquid rendering and performance
 
