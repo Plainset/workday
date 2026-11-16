@@ -9,6 +9,7 @@ struct SettingsView: View {
             GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
             NotificationSettings().tabItem { Label("Notifications", systemImage: "bell") }
             BackupSettings().tabItem { Label("Backups", systemImage: "externaldrive") }
+            SyncSettings().tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
             PrivacySettings().tabItem { Label("Data & Privacy", systemImage: "lock") }
         }
         .padding(18)
@@ -254,7 +255,8 @@ private struct PrivacySettings: View {
     var body: some View {
         Form {
             Section("Where your data lives") {
-                Text("All work history, settings and backups are stored only on this Mac, in your user Library under Application Support → Workday. There are no accounts, no cloud sync, no analytics and no network access.")
+                Text("All work history, settings and backups are stored on this Mac, in your user Library under Application Support → Workday. There are no accounts, no analytics and no Workday servers; Workday itself makes no network connections.")
+                Text("Sync is optional and off by default. When you turn it on, changes are copied only into the folder you choose (normally Workday Sync in your iCloud Drive), and your Macs read each other's changes from there. Turning sync off stops this and keeps everything on this Mac.")
                 Button("Show Data Folder in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([WorkdayPaths.databaseURL])
                 }
@@ -267,5 +269,164 @@ private struct PrivacySettings: View {
             .font(.callout)
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct SyncSettings: View {
+    @Environment(AppModel.self) private var model
+    @State private var name = ""
+    @State private var message: String?
+
+    var body: some View {
+        let sync = model.sync
+        Form {
+            Section("Sync between your Macs") {
+                Toggle("Sync with my other Macs", isOn: Binding(
+                    get: { sync.enabled },
+                    set: { on in
+                        if on {
+                            message = sync.enable(backups: model.backups)
+                            model.refreshBackupStatus()
+                        } else {
+                            sync.disable()
+                            message = nil
+                        }
+                    }))
+                Text("Hours, edits, the running timer, your daily goal and reminders appear on every Mac that syncs with the same folder. Each Mac keeps its own copy of your data. Nothing is sent to Workday or any server — only to the folder below. A safety backup is made when you turn sync on; turning it off keeps all data on this Mac.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let message {
+                    Text(message).font(.footnote).foregroundStyle(.red)
+                }
+            }
+            Section("Folder") {
+                HStack {
+                    Image(systemName: sync.isUsingICloudDrive ? "icloud" : "folder")
+                    Text(sync.isUsingICloudDrive ? "iCloud Drive → \(SyncEngine.rootName)" : displayPath(sync.folder))
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                }
+                HStack {
+                    Button("Choose Folder…") { chooseFolder() }
+                    if !sync.isUsingICloudDrive {
+                        Button("Use iCloud Drive") { sync.setFolder(SyncEngine.iCloudDriveURL) }
+                            .disabled(!SyncController.iCloudDriveAvailable)
+                    }
+                    Button("Show in Finder") {
+                        let root = SyncEngine.syncRoot(in: sync.folder)
+                        NSWorkspace.shared.activateFileViewerSelecting([FileManager.default.fileExists(atPath: root.path) ? root : sync.folder])
+                    }
+                }
+                if sync.isUsingICloudDrive && !SyncController.iCloudDriveAvailable {
+                    Label("iCloud Drive isn't turned on for this Mac. Turn it on in System Settings → your name → iCloud, or choose a folder that another app (such as Dropbox) keeps in sync.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
+                Text("Choose the same folder on each Mac. Both Macs should be signed in to the same Apple ID for iCloud Drive.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("Status") {
+                switch sync.status {
+                case .off:
+                    Label("Sync is off.", systemImage: "pause.circle")
+                case .syncing:
+                    Label("Syncing…", systemImage: "arrow.triangle.2.circlepath")
+                case .ok:
+                    Label(sync.lastSynced.map { "Last synced \($0.formatted(date: .abbreviated, time: .standard))" } ?? "Synced",
+                          systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                case .failed(let error):
+                    Label(error, systemImage: "xmark.octagon.fill").foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(sync.problems, id: \.self) { problem in
+                    Label(problem, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                }
+                Button("Sync Now") { sync.syncNow() }.disabled(!sync.enabled)
+            }
+            Section("This Mac") {
+                TextField("Name shown on your other Macs", text: $name)
+                    .onSubmit { sync.setDeviceName(name) }
+                    .onAppear { name = sync.deviceName }
+                    .onDisappear { sync.setDeviceName(name) }
+            }
+            Section("Other Macs") {
+                if sync.peers.isEmpty {
+                    Text(sync.enabled ? "No other Macs yet. Turn on sync on your other Mac and choose the same folder."
+                                      : "Turn on sync to see your other Macs.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(sync.peers) { peer in
+                    HStack {
+                        Image(systemName: "laptopcomputer.and.iphone")
+                        Text(peer.name)
+                        Spacer()
+                        if let seen = peer.lastSeen {
+                            Text("last seen \(seen.formatted(.relative(presentation: .named)))")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            ConflictSection()
+        }
+        .formStyle(.grouped)
+    }
+
+    private func displayPath(_ url: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return url.path.hasPrefix(home) ? "~" + url.path.dropFirst(home.count) : url.path
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use This Folder"
+        panel.message = "Choose a folder that your Macs share. Workday creates a “\(SyncEngine.rootName)” folder inside it."
+        if FileManager.default.fileExists(atPath: SyncEngine.iCloudDriveURL.path) { panel.directoryURL = SyncEngine.iCloudDriveURL }
+        if panel.runModal() == .OK, let url = panel.url {
+            // Picking the Workday Sync folder itself means its parent.
+            model.sync.setFolder(url.lastPathComponent == SyncEngine.rootName ? url.deletingLastPathComponent() : url)
+        }
+    }
+}
+
+/// Overlapping sessions merged in from another Mac, with ways to resolve them.
+private struct ConflictSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let conflicts = model.ledger.overlapConflicts(now: model.displayNow)
+        if !conflicts.isEmpty {
+            Section("Sync conflicts") {
+                Text("These sessions overlap, usually because both Macs recorded the same hours. Until you choose, the overlapping time is counted once.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                ForEach(conflicts) { c in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(line(c.first)).font(.callout)
+                        Text(line(c.second)).font(.callout)
+                        Text("Overlap: \(DurationFormat.short(c.overlap.duration))").font(.footnote).foregroundStyle(.secondary)
+                        if c.isResolvable {
+                            HStack {
+                                Button("Keep First") { model.perform { try model.ledger.resolveOverlap(keep: c.first.id, discard: c.second.id) } }
+                                Button("Keep Second") { model.perform { try model.ledger.resolveOverlap(keep: c.second.id, discard: c.first.id) } }
+                                Button("Merge into One") { model.perform { try model.ledger.mergeOverlap(c.first.id, c.second.id) } }
+                            }
+                        } else {
+                            Text("Stop the timer and resolve any interruption first; then these can be kept or merged.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private func line(_ s: WorkSession) -> String {
+        let where_ = model.ledger.isLocal(s) ? "this Mac" : model.remoteName(s)
+        let end = s.state == .active ? "now" : DateFormatter.time(calendar: model.calendar).string(from: s.end ?? s.checkpoint)
+        let day = DateFormatter.make("EEEdMMM", calendar: model.calendar).string(from: s.start)
+        return "\(day) \(DateFormatter.time(calendar: model.calendar).string(from: s.start))–\(end) · recorded on \(where_)"
     }
 }

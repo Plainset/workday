@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         model.sync.onChange = { [weak self] _ in self?.model.syncApplied() }
         model.sync.start()
         if CommandLine.arguments.contains("--e2e-control") && WorkdayPaths.usesCustomDataDirectory {
+            AppDelegate.quietWindows = true
             E2EControl.start(model: model)
         }
 
