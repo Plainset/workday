@@ -320,7 +320,7 @@ private struct SyncSettings: View {
                     Label("iCloud Drive isn't turned on for this Mac. Turn it on in System Settings → your name → iCloud, or choose a folder that another app (such as Dropbox) keeps in sync.", systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote).foregroundStyle(.orange)
                 }
-                Text("Choose the same folder on each Mac. Both Macs should be signed in to the same Apple ID for iCloud Drive.")
+                Text("Choose the same folder on each Mac. With iCloud Drive, both Macs can use the same Apple ID, or a folder shared between two Apple IDs (Finder → Share → Collaborate, “Can make changes”).")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Status") {
