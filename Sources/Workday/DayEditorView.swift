@@ -305,9 +305,9 @@ struct SessionRow: View {
                     }
                     switch session.state {
                     case .active:
-                        badge("Running", color: Theme.orange)
+                        badge(model.ledger.isLocal(session) ? "Running" : "Running on \(model.remoteName(session))", color: Theme.orange)
                     case .interrupted:
-                        badge("Needs review", color: .red)
+                        badge(model.ledger.isLocal(session) ? "Needs review" : "Review on \(model.remoteName(session))", color: .red)
                     case .closed:
                         EmptyView()
                     }
@@ -329,13 +329,19 @@ struct SessionRow: View {
             .accessibilityElement(children: .combine)
             Spacer()
             switch session.state {
-            case .active:
+            case .active where model.ledger.isLocal(session):
                 Button("Stop Timer") { model.stop() }
                     .buttonStyle(PillButtonStyle(compact: true))
                     .help("Running sessions can be edited after you stop the timer")
-            case .interrupted:
+            case .active:
+                Button("Stop There & Start Here") { model.stopRemoteAndStart(session) }
+                    .buttonStyle(PillButtonStyle(compact: true))
+                    .help("Ends this session on \(model.remoteName(session)) now and starts the timer on this Mac")
+            case .interrupted where model.ledger.isLocal(session):
                 Button("Review…") { AppDelegate.shared?.showRecovery() }
                     .buttonStyle(PillButtonStyle(compact: true))
+            case .interrupted:
+                EmptyView()
             case .closed:
                 Button("Edit", action: onEdit)
                     .buttonStyle(PillButtonStyle(compact: true))

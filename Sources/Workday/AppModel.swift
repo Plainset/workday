@@ -11,6 +11,7 @@ final class AppModel {
     let backups: BackupManager
     let notifications: NotificationService
     let launchAtLogin: LaunchAtLogin
+    let sync: SyncController
 
     /// Display clock, refreshed by `tick()`. Totals never depend on tick frequency; they are computed
     /// from stored instants and this value.
@@ -41,6 +42,7 @@ final class AppModel {
         self.backups = backups
         self.notifications = notifications
         self.launchAtLogin = launchAtLogin
+        self.sync = SyncController(ledger: ledger)
         self.now = ledger.clock()
         self.displayNow = Self.minuteFloor(ledger.clock())
         refreshBackupStatus()
@@ -59,8 +61,35 @@ final class AppModel {
     // MARK: Timer actions
 
     func start() {
+        if !ledger.isRunning, let remote = ledger.remoteActiveSessions.first {
+            confirmTakeOver(remote)
+            return
+        }
         perform { try ledger.start() }
         AppDelegate.shared?.timerStateChanged()
+    }
+
+    /// The session running on another Mac, if any (shown as "Running on …").
+    var remoteSession: WorkSession? { ledger.isRunning ? nil : ledger.remoteActiveSessions.first }
+
+    func remoteName(_ session: WorkSession) -> String { sync.name(of: session.ownerDevice) }
+
+    /// "Stop it there and start here": ends the other Mac's session now and starts timing on this Mac.
+    func stopRemoteAndStart(_ session: WorkSession) {
+        perform { try ledger.stopRemoteAndStart(remoteID: session.id) }
+        sync.syncNow()
+        AppDelegate.shared?.timerStateChanged()
+    }
+
+    private func confirmTakeOver(_ remote: WorkSession) {
+        let alert = NSAlert()
+        let since = DateFormatter.time(calendar: calendar).string(from: remote.start)
+        alert.messageText = "The timer is running on “\(remoteName(remote))”"
+        alert.informativeText = "It started at \(since) (\(DurationFormat.short(ledger.elapsed(of: remote))) so far). Stop it there now and start timing on this Mac?"
+        alert.addButton(withTitle: "Stop It There and Start Here")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { stopRemoteAndStart(remote) }
     }
 
     func stop() {
@@ -89,11 +118,20 @@ final class AppModel {
             displayNow = ledger.clock()
             errorMessage = nil
             AppDelegate.shared?.timerStateChanged()
+            sync.scheduleSoon()
             return true
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return false
         }
+    }
+
+    /// Refreshes after another Mac's changes were merged in.
+    func syncApplied() {
+        tick(ledger.clock())
+        displayNow = ledger.clock()
+        AppDelegate.shared?.timerStateChanged()
+        evaluateReminders()
     }
 
     // MARK: Backups
@@ -143,6 +181,8 @@ final class AppModel {
             errorMessage = nil
             if !found.isEmpty || ledger.hasPendingRecovery { AppDelegate.shared?.showRecovery() }
             AppDelegate.shared?.timerStateChanged()
+            // With sync on, the restored state is published to the other Macs as new edits.
+            sync.syncNow()
             return true
         } catch {
             try? ledger.reload()
@@ -176,6 +216,7 @@ final class AppModel {
         guard notifications.permission == .authorized else { return }
         for kind in due {
             guard (try? ledger.store.markNotified(day: today, kind: kind, at: now)) == true else { continue }
+            sync.scheduleSoon()
             switch kind {
             case .goalReached:
                 notifications.post(id: "goal-\(today)", title: "Daily goal reached",

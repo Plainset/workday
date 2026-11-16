@@ -13,6 +13,7 @@ struct MenuPopoverView: View {
         let total = ledger.total(for: today, now: now)
         let goal = ledger.settings.dailyGoalSeconds
         let running = ledger.isRunning
+        let remote = model.remoteSession
         let streak = ledger.streak(now: now)
 
         VStack(alignment: .leading, spacing: 14) {
@@ -27,15 +28,15 @@ struct MenuPopoverView: View {
                         .font(.system(size: 13, weight: .medium))
                 }
                 Spacer()
-                StatusPill(running: running)
+                StatusPill(running: running, elsewhere: remote != nil)
             }
 
             // Big total + live session.
             HStack(alignment: .center, spacing: 14) {
-                MiniGlass(seconds: total, live: running, visible: model.popoverVisible || AppDelegate.shared == nil)
+                MiniGlass(seconds: total, live: running || remote != nil, visible: model.popoverVisible || AppDelegate.shared == nil)
                     .frame(width: 46, height: 58)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(running ? DurationFormat.precise(total) : DurationFormat.short(total))
+                    Text(running || remote != nil ? DurationFormat.precise(total) : DurationFormat.short(total))
                         .font(.system(size: 30, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText())
@@ -45,6 +46,12 @@ struct MenuPopoverView: View {
                             .font(.system(size: 12))
                             .monospacedDigit()
                             .foregroundStyle(Theme.secondaryText(scheme))
+                    } else if let remote {
+                        Text("Running on \(model.remoteName(remote)) · \(DurationFormat.precise(ledger.elapsed(of: remote, now: now))) since \(DateFormatter.time(calendar: model.calendar).string(from: remote.start))")
+                            .font(.system(size: 12))
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.secondaryText(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         let touching = ledger.sessions(touching: today, now: now)
                         let count = touching.count
@@ -85,21 +92,36 @@ struct MenuPopoverView: View {
             BackupFailureNotice()
 
             // Primary action: explicit, labelled with its consequence.
-            Button {
-                running ? model.stop() : model.start()
-            } label: {
-                HStack {
-                    Image(systemName: running ? "stop.fill" : "play.fill")
-                    Text(running ? "Stop Work" : "Start Work")
-                    Spacer()
-                    Text(running ? "ends this session now" : "starts timing now")
-                        .font(.system(size: 11, weight: .regular))
-                        .opacity(0.75)
+            if let remote {
+                Button {
+                    model.stopRemoteAndStart(remote)
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.left.arrow.right")
+                        Text("Stop There & Start Here")
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .buttonStyle(PillButtonStyle(kind: .primary))
+                .accessibilityHint("Ends the session running on \(model.remoteName(remote)) now and starts the timer on this Mac")
+            } else {
+                Button {
+                    running ? model.stop() : model.start()
+                } label: {
+                    HStack {
+                        Image(systemName: running ? "stop.fill" : "play.fill")
+                        Text(running ? "Stop Work" : "Start Work")
+                        Spacer()
+                        Text(running ? "ends this session now" : "starts timing now")
+                            .font(.system(size: 11, weight: .regular))
+                            .opacity(0.75)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PillButtonStyle(kind: running ? .secondary : .primary))
+                .accessibilityHint(running ? "Stops the timer and records this session" : "Starts the work timer")
             }
-            .buttonStyle(PillButtonStyle(kind: running ? .secondary : .primary))
-            .accessibilityHint(running ? "Stops the timer and records this session" : "Starts the work timer")
 
             if let message = model.errorMessage {
                 Text(message)
@@ -128,20 +150,22 @@ struct MenuPopoverView: View {
 
 struct StatusPill: View {
     var running: Bool
+    var elsewhere: Bool = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let lit = running || elsewhere
         HStack(spacing: 5) {
             Circle()
-                .fill(running ? Theme.orange : Theme.secondaryText(scheme).opacity(0.6))
+                .fill(lit ? Theme.orange : Theme.secondaryText(scheme).opacity(0.6))
                 .frame(width: 7, height: 7)
-            Text(running ? "Running" : "Stopped")
+            Text(running ? "Running" : elsewhere ? "On other Mac" : "Stopped")
                 .font(.system(size: 11, weight: .semibold))
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(running ? Theme.orange.opacity(0.16) : Theme.subtleFill(scheme), in: Capsule())
-        .accessibilityLabel(running ? "Status: running" : "Status: stopped")
+        .background(lit ? Theme.orange.opacity(running ? 0.16 : 0.08) : Theme.subtleFill(scheme), in: Capsule())
+        .accessibilityLabel(running ? "Status: running" : elsewhere ? "Status: running on your other Mac" : "Status: stopped")
     }
 }
 

@@ -5,7 +5,7 @@ import Foundation
 /// Uses SQLite in WAL mode with `synchronous=FULL`; every mutation runs in a transaction and
 /// bumps `data_revision`, which drives the "back up daily when data changes" policy.
 public final class WorkStore {
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
 
     public let db: SQLiteDatabase
     public var path: String { db.path }
@@ -75,6 +75,52 @@ public final class WorkStore {
                 if meta("data_revision") == nil { try setMeta("data_revision", "0") }
             }
         }
+        if version < 2 {
+            // v2: device sync. Every session records the device that owns it (existing rows belong to this
+            // device), and `sync_versions` remembers the winning version clock of every synced record.
+            try db.transaction {
+                var hasOwner = false
+                try db.query("PRAGMA table_info(sessions)") { if $0.text(1) == "owner_device" { hasOwner = true } }
+                if !hasOwner {
+                    try db.execute("ALTER TABLE sessions ADD COLUMN owner_device TEXT NOT NULL DEFAULT ''")
+                }
+                try db.execute("""
+                CREATE TABLE IF NOT EXISTS sync_versions (
+                    entity TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    hlc TEXT NOT NULL,
+                    hash TEXT NOT NULL,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (entity, key)
+                )
+                """)
+                try setMeta("schema_version", "2")
+            }
+        }
+        // Idempotent fix-ups that must also hold after a restore copied in older or foreign data.
+        try db.transaction {
+            if meta("device_id").flatMap(UUID.init(uuidString:)) == nil {
+                try setMeta("device_id", UUID().uuidString)
+            }
+            cachedDeviceID = meta("device_id") ?? ""
+            try db.run("UPDATE sessions SET owner_device = ? WHERE owner_device = ''", [.text(cachedDeviceID)])
+        }
+    }
+
+    private var cachedDeviceID = ""
+
+    /// Random identifier of this installation's data, created once. Used to own sessions and to name this
+    /// device's folder in a sync folder. Never derived from hardware or account details. (Cached: it only
+    /// changes inside `migrate()`, which also runs after a restore.)
+    public var deviceID: String { cachedDeviceID }
+
+    /// Gives this installation a new identity. Used when sync finds another Mac writing under the same
+    /// identifier (a database copied by Migration Assistant or from a backup of another Mac). Existing
+    /// sessions keep their owner: they belong to whichever Mac created them.
+    public func regenerateDeviceID() throws {
+        let id = UUID().uuidString
+        try setMeta("device_id", id)
+        cachedDeviceID = id
     }
 
     // MARK: Meta
@@ -101,7 +147,7 @@ public final class WorkStore {
     public func loadSessions() throws -> [WorkSession] {
         var result: [WorkSession] = []
         try db.query("""
-            SELECT id, start, end, state, checkpoint, checkpoint_kind, detected_at, tz, created_at, updated_at
+            SELECT id, start, end, state, checkpoint, checkpoint_kind, detected_at, tz, created_at, updated_at, owner_device
             FROM sessions ORDER BY start
             """) { row in
             guard let id = UUID(uuidString: row.text(0)) else { return }
@@ -115,7 +161,8 @@ public final class WorkStore {
                 detectedAt: row.optionalDouble(6).map(Date.init(timeIntervalSinceReferenceDate:)),
                 timeZoneID: row.text(7),
                 createdAt: Date(timeIntervalSinceReferenceDate: row.double(8)),
-                updatedAt: Date(timeIntervalSinceReferenceDate: row.double(9))))
+                updatedAt: Date(timeIntervalSinceReferenceDate: row.double(9)),
+                ownerDevice: row.text(10)))
         }
         return result
     }
@@ -125,13 +172,15 @@ public final class WorkStore {
     }
 
     public func upsert(_ s: WorkSession) throws {
+        let owner = s.ownerDevice.isEmpty ? deviceID : s.ownerDevice
         try db.transaction {
             try db.run("""
-                INSERT INTO sessions(id, start, end, state, checkpoint, checkpoint_kind, detected_at, tz, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO sessions(id, start, end, state, checkpoint, checkpoint_kind, detected_at, tz, created_at, updated_at, owner_device)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET start=excluded.start, end=excluded.end, state=excluded.state,
                     checkpoint=excluded.checkpoint, checkpoint_kind=excluded.checkpoint_kind,
-                    detected_at=excluded.detected_at, tz=excluded.tz, updated_at=excluded.updated_at
+                    detected_at=excluded.detected_at, tz=excluded.tz, updated_at=excluded.updated_at,
+                    owner_device=excluded.owner_device
                 """, [
                     .text(s.id.uuidString),
                     .double(s.start.timeIntervalSinceReferenceDate),
@@ -143,6 +192,7 @@ public final class WorkStore {
                     .text(s.timeZoneID),
                     .double(s.createdAt.timeIntervalSinceReferenceDate),
                     .double(s.updatedAt.timeIntervalSinceReferenceDate),
+                    .text(owner),
                 ])
             try bumpRevision()
         }
@@ -225,7 +275,7 @@ public final class WorkStore {
         return db.changes > 0
     }
 
-    func notificationRecords() -> [(day: String, kind: String, sentAt: Double)] {
+    public func notificationRecords() -> [(day: String, kind: String, sentAt: Double)] {
         var result: [(String, String, Double)] = []
         try? db.query("SELECT day, kind, sent_at FROM notifications_sent") { result.append(($0.text(0), $0.text(1), $0.double(2))) }
         return result

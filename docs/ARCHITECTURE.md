@@ -32,7 +32,9 @@ Minimum macOS 14 (needed for the Observation framework and modern SwiftUI APIs).
 | Month / year calendar | `Sources/Workday/CalendarViews.swift` |
 | Day editor | `Sources/Workday/DayEditorView.swift` |
 | Recovery panel | `Sources/Workday/RecoveryView.swift` |
-| Settings (goal, login item, notifications, backups, privacy) | `Sources/Workday/SettingsView.swift` |
+| Settings (goal, login item, notifications, backups, sync, privacy) | `Sources/Workday/SettingsView.swift` |
+| Sync format, clock, merge engine | `Sources/WorkdayCore/Sync/SyncModel.swift`, `SyncEngine.swift` |
+| Sync scheduling and status | `Sources/Workday/SyncController.swift` |
 | Notifications, launch at login | `Sources/Workday/Services.swift` |
 
 ## Time accounting
@@ -102,6 +104,101 @@ retention 30 automatic / 20 manual / 10 safety. Restore validates first, takes a
 database in one SQLite write transaction, rolls back to the safety copy on failure, re-runs migrations and
 interruption detection. Corrupt or truncated files are listed as unusable and cannot be restored.
 Restore is disabled while the timer runs.
+
+## Sync between Macs
+
+Optional, off by default (Settings → Sync). There is no server and no Workday account: the "account" is whatever
+keeps a folder in sync between the owner's Macs — normally iCloud Drive under one Apple ID, but any folder kept in
+sync by another tool works.
+
+**Each Mac keeps its own SQLite database** as the source of truth for its UI. The live database is never put in
+the sync folder; Macs exchange change records instead.
+
+### Folder layout (one writer per file)
+
+```
+<folder>/Workday Sync/devices/<deviceID>/device.json          {format, device, name, epoch, seq, updatedAt}
+<folder>/Workday Sync/devices/<deviceID>/log-<firstSeq>.jsonl  one immutable batch of records, JSON Lines
+<folder>/Workday Sync/devices/<deviceID>/snapshot.json         {format, device, epoch, seq, createdAt, records}
+```
+
+* `deviceID` is a random UUID created once (`meta.device_id`); it is never derived from hardware or the account.
+* A Mac writes only inside its own folder. Every file is written to a `.tmp-…` file (0600) and renamed into
+  place, so readers and iCloud only see complete files. Log files are never rewritten.
+* Each pass that has local changes writes one new `log-<firstSeq>.jsonl`; records are numbered by a per-device
+  sequence (`meta.sync_seq`). When 64 log files exist (and whenever a Mac starts in a new folder) they are folded
+  into `snapshot.json` and deleted. A snapshot holds the full merged state with each record's original clock.
+* Each Mac stores how far it has applied every peer as `meta.sync_cursor_<peer> = "<epoch>:<seq>"`. A new epoch
+  (the peer started over, e.g. in a new folder) resets the cursor; a cursor before the peer's first log file
+  reads its snapshot first.
+* Reading tolerates iCloud: a placeholder (`.<name>.icloud`) triggers `startDownloadingUbiquitousItem` and the
+  pass waits for it; a last line without a newline (a half-synced file) is not applied until complete.
+
+### Records and merge rules
+
+| Kind | Key | Merge |
+|---|---|---|
+| `session` | session UUID | last writer wins on the whole session |
+| `tombstone` | session UUID | a delete; wins over any older edit, loses to a newer one |
+| `setting` | field name | last writer wins per field (`dailyGoalMinutes`, goal notification, start/stop reminder flags and times) |
+| `notified` | day + kind | grow-only set, so "goal reached" is shown once per day across Macs (best effort) |
+| `checkpoint` | session UUID | advisory: moves a still-running session of the sending Mac forward; never an edit |
+
+* **Clock**: every record carries a hybrid logical clock `wall(ms)-counter-deviceID`, compared in that order. A Mac
+  never issues a clock below the largest it has seen, so an edit made after seeing another Mac's edit always wins
+  even if this Mac's wall clock is behind. Records more than a year ahead of this Mac's clock are held (the cursor
+  stops before them and Settings asks to check the date); records of a kind, setting or format this version
+  doesn't know are held the same way until Workday is updated, never skipped for good.
+* **Finding local changes**: `sync_versions(entity, key, hlc, hash, deleted)` holds the last synced version of every
+  record. A pass compares the database with it (sessions and settings only when `data_revision` changed): a new
+  or changed row gets a fresh clock, a row that vanished becomes a tombstone. All write paths — timer, editor,
+  recovery, conflict resolution, restore — are therefore published the same way. Sessions never synced before
+  use their own `updated_at` as the clock; a Mac joining a folder that already has other Macs adopts their settings.
+* **Applying** is idempotent: a record is applied only if its clock is newer than the stored version, so
+  re-reading a log, out-of-order arrival and snapshots overlapping logs are harmless. Each pass publishes before it
+  imports, so local edits are clocked before anything is merged.
+* **Untrusted input**: files are read only as regular files (`O_NOFOLLOW`, `fstat`), at most 16 MB per file and
+  4 KB per line; links inside the sync tree are refused; bootstrap deletes only the engine's own file names.
+  Every field is bounded (UUIDs, instants 2000–2100, end after start, finished sessions ≤ 400 days, enums, time
+  zone text, setting ranges, sequence numbers ≤ 2^53); a malformed record is skipped and reported, never run.
+* **Identity checks**: if this Mac's own `device.json` carries an epoch it didn't write, another Mac shares its
+  identity (a database copied by Migration Assistant), so it takes a new `device_id` and starts a fresh log. If
+  that file is ahead of `meta.sync_seq`, the database went back in time and the Mac also starts a fresh log.
+* **Restore**: a backup restored while sync is on rolls back only this Mac's own sessions (republished as new edits).
+  Versions of sessions another Mac owns are dropped and every peer is read again, so their current state returns.
+
+### Running timer across Macs
+
+* Schema v2 adds `sessions.owner_device`; existing rows belong to the local device.
+* Only the owning Mac treats an active session as its timer: `activeSession`, `detectInterruptions` and recovery
+  ignore other Macs' sessions (the Mini never sees the laptop's heartbeats, so it must never flag them).
+* Another Mac's running session shows as "Running on <name>" with its live elapsed time and counts toward totals.
+  Starting while it runs offers **Stop It There and Start Here** (`stopRemoteAndStart`): an edit that ends the
+  remote session now, which then stops the timer on that Mac when it syncs.
+* Heartbeats stay local (every 30 s); a `checkpoint` record is shared at most every 10 minutes. Another Mac's
+  running session counts toward totals only up to 30 minutes past its last shared checkpoint, so a Mac that went to
+  sleep or offline doesn't inflate totals here. A crashed remote session is recovered on its own Mac at its next
+  launch, and the result syncs back.
+
+### Overlaps and totals
+
+Two Macs can hold overlapping sessions (the same hours logged on both before sync, or both started while
+offline). They are imported, never deleted automatically, and listed under Settings → Sync → **Sync conflicts**,
+where the owner keeps one or merges them into one. Until then, day and week totals count the **union** of all
+sessions' time (`WorkLedger.union`; running sessions add only time not already covered), so no minute is counted
+twice. The editor still refuses to *create* overlaps.
+Keeping one or merging is published as one decision (the kept session and the other's deletion share one clock),
+so if both Macs settle the same overlap differently while offline, the later decision wins whole.
+
+### Lifecycle
+
+* Turning sync on makes a `safety` backup, then publishes the full local history and imports the other Macs.
+* Passes run at launch, on wake, every 45 s while on, and 2 s after a local change (debounced). Idle cost is a
+  directory listing and a few small reads; nothing runs when sync is off, and there is no per-second disk work.
+* Turning sync off stops all reading and writing and keeps local data. Choosing a different folder publishes
+  everything there again.
+* A restore keeps the sync bookkeeping (`device_id`, `sync_*` meta, `sync_versions` for this Mac's own sessions),
+  so this Mac's restored sessions are published as new edits rather than being overwritten by the other Macs.
 
 ## Liquid rendering and performance
 

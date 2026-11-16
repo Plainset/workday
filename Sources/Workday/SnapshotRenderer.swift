@@ -99,6 +99,25 @@ enum SnapshotRenderer {
                                     notifications: NotificationService(), launchAtLogin: LaunchAtLogin())
             render(MenuPopoverView().environment(recModel), size: CGSize(width: 320, height: 430), scheme: .light,
                    to: outputDirectory.appendingPathComponent("popover-recovery-light.png"))
+
+            // Sync: a timer running on another Mac, and an overlap merged in from it.
+            let syncStore = try WorkStore(path: tmp.appendingPathComponent("sync.sqlite").path)
+            let syncLedger = try WorkLedger(store: syncStore, calendar: cal, clock: { now })
+            let other = UUID().uuidString
+            try syncLedger.addSession(start: now.addingTimeInterval(-26 * 3600), end: now.addingTimeInterval(-23 * 3600))
+            try syncStore.upsert(WorkSession(start: now.addingTimeInterval(-25 * 3600), end: now.addingTimeInterval(-22 * 3600),
+                                             state: .closed, ownerDevice: other))
+            try syncStore.upsert(WorkSession(start: now.addingTimeInterval(-95 * 60), end: nil, state: .active,
+                                             checkpoint: now.addingTimeInterval(-5 * 60), ownerDevice: other))
+            try syncLedger.reload()
+            let syncModel = AppModel(ledger: syncLedger, backups: BackupManager(store: syncStore, directory: tmp),
+                                     notifications: NotificationService(), launchAtLogin: LaunchAtLogin())
+            syncModel.tick(now)
+            for scheme in [ColorScheme.light, .dark] {
+                let name = scheme == .light ? "light" : "dark"
+                render(MenuPopoverView().environment(syncModel), size: CGSize(width: 320, height: 330), scheme: scheme,
+                       to: outputDirectory.appendingPathComponent("popover-running-elsewhere-\(name).png"))
+            }
             print("Snapshots written to \(outputDirectory.path)")
         } catch {
             FileHandle.standardError.write("Snapshot failed: \(error)\n".data(using: .utf8)!)

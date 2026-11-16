@@ -6,7 +6,8 @@ Workday lives in your menu bar. Press **Start Work**, press **Stop Work** — th
 The calendar fills each day with translucent, gently moving orange liquid: empty at 0 hours, full at 18,
 glowing and overflowing beyond that, always labelled with the exact time worked.
 
-Fully offline. No account, no cloud, no analytics. Your work history never leaves your Mac.
+No account, no servers, no analytics. Workday works fully offline; optional sync between your own Macs goes only
+through a folder you choose (such as your iCloud Drive) and is off by default.
 
 <p align="center">
   <img src="docs/images/month-light.png" width="720" alt="Month view: each day is a tile of orange liquid labelled with the hours worked">
@@ -30,6 +31,11 @@ Fully offline. No account, no cloud, no analytics. Your work history never leave
 * **Goal and streak** — one daily goal (default 8 h), a streak of days that met it, an optional goal-reached
   notification and start/stop reminders.
 * **Local backups** — automatic daily snapshots with validation and one-click restore.
+* **Sync between your Macs (optional)** — hours, edits, the running timer, your goal and reminders show up on
+  every Mac that syncs through the same folder — by default *Workday Sync* in your iCloud Drive. No sign-in, no
+  server: each Mac keeps its own database and they exchange small change files. A timer running on your other Mac
+  shows as “Running on …”, with a one-click *Stop There & Start Here*. Off until you turn it on in
+  Settings → Sync.
 * **Accessible** — VoiceOver labels with the full date and exact hours, keyboard navigation, light and dark mode.
 
 <p align="center">
@@ -76,10 +82,13 @@ Other scripts:
 | `scripts/package_release.sh` | Release ZIP + DMG + SHA256SUMS in `dist/release/` (optional Developer ID signing / notarisation) |
 | `scripts/collect_evidence.sh` | Tests, build and rendered screenshots into `evidence/latest/` |
 | `scripts/perf.sh` | CPU per animation scenario (runs with throwaway demo data) |
+| `scripts/sync_e2e.sh` | Two app instances syncing through a temporary folder (start/stop hand-over, edits, deletes, settings) |
 | `scripts/make_icon.swift` | Regenerates `Resources/AppIcon.icns` |
 
 For development, `WORKDAY_DATA_DIR=/tmp/workday-dev` points the app at a separate data folder (such instances
-never register a login item) and `--seed-demo` fills an empty folder with sample history.
+never register a login item) and `--seed-demo` fills an empty folder with sample history. Such instances can also
+sync through a test folder: `WORKDAY_SYNC_DIR=/tmp/workday-sync` (optionally `WORKDAY_SYNC_INTERVAL=2`,
+`WORKDAY_DEVICE_NAME=Test`).
 
 ## Project layout
 
@@ -95,7 +104,8 @@ Design notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Privacy
 
-Everything stays on your Mac. See [PRIVACY.md](PRIVACY.md).
+Everything stays on your Mac unless you turn on sync, which copies changes only into the folder you choose (normally
+your own iCloud Drive). See [PRIVACY.md](PRIVACY.md).
 
 ## Contributing and security
 
